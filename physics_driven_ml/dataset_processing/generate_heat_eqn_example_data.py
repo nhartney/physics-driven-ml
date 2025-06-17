@@ -3,10 +3,6 @@ A script to solve the heat equation with a forcing term.
 The equation is solved in time with the forward Euler method.
 """
 import os
-from firedrake import (PeriodicRectangleMesh, SpatialCoordinate, Function,
-                       CheckpointFile, interpolate, RectangleMesh,
-                       IcosahedralSphereMesh, Constant, TestFunction, sin, pi,
-                       grad, inner, dx)
 from firedrake import *
 from gusto import *
 import numpy as np
@@ -61,25 +57,6 @@ dt = 0.1
 # Define the list of initial conditions to use to generate solutions from
 initial_condtions = [0.1*sin(pi*x)*sin(pi*y)]
 
-# # make a list of x and y coordinates for point evaluation
-# mesh_coords_x, mesh_coords_y = mesh.coordinates
-# # Make functions with the coordinates
-# V0 = FunctionSpace(mesh, "DG", 0)
-# x_coords = Function(V0).interpolate(mesh_coords_x).dat.data
-# y_coords = Function(V0).interpolate(mesh_coords_y).dat.data
-# print(x_coords)
-# print(y_coords)
-
-# mesh_coords = mesh.coordinates
-# cell = mesh.ufl_cell().cellname()
-# DG1_elt = FiniteElement("DG", cell, 1, variant="equispaced")
-# vec_DG1 = VectorFunctionSpace(mesh, DG1_elt)
-# coords_dg = Function(vec_DG1).interpolate(mesh_coords)
-x_coords = mesh.coordinates.dat.data[:, 0]
-y_coords = mesh.coordinates.dat.data[:, 1]
-print(x_coords)
-print(y_coords)
-
 # Produce u, f and t for 10 timesteps, for each of these initial conditions
 data_list = []
 for IC in initial_condtions:
@@ -90,21 +67,19 @@ for IC in initial_condtions:
         u = s[1]
         t = s[2]
         print("this is the time:", t)
-        for i in x_coords:
-            for j in y_coords:
-                print("this is (x,y):", i,j)
-                f_eval = f.at(i,j)
-                u_eval = u.at(i,j)
-                # f, u, t, x, y must all be Firedrake functions
-                fn_s = mesh.coordinates.function_space()
-                f_func = Function(fn_s).assign(Constant(f_eval))
-                u_func = Function(fn_s).assign(Constant(u_eval))
-                t_func = Function(fn_s).assign(Constant(t))
-                x_func = Function(fn_s).assign(Constant(i))
-                y_func = Function(fn_s).assign(Constant(j))
-                # concatenate list of (f,u,t,x,y) function solutions
-                # data_list.append((f_eval, u_eval, t, i, j))
-                data_list.append((f_func, u_func, t_func, x_func, y_func))
+        for i, j in mesh.coordinates.dat.data:
+            print("this is (x,y):", i,j)
+            f_eval = f.at(i,j)
+            u_eval = u.at(i,j)
+            # f, u, t, x, y must all be Firedrake functions
+            fn_s = mesh.coordinates.function_space()
+            f_func = Function(fn_s).assign(Constant(f_eval))
+            u_func = Function(fn_s).assign(Constant(u_eval))
+            t_func = Function(fn_s).assign(Constant(t))
+            x_func = Function(fn_s).assign(Constant(i))
+            y_func = Function(fn_s).assign(Constant(j))
+            # concatenate list of (f,u,t,x,y) function solutions
+            data_list.append((f_func, u_func, t_func, x_func, y_func))
 
 
 # Save the data in train and test sets to checkpoint file

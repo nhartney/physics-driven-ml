@@ -6,6 +6,7 @@ import os
 from firedrake import *
 from gusto import *
 import numpy as np
+from numpy import random
 from numpy.random import default_rng
 from tqdm.auto import tqdm, trange
 
@@ -46,20 +47,35 @@ def solve_with_IC(mesh, ntimesteps, dt, IC):
 
     return stepped_sln
 
+
+# Define the list of initial conditions to use to generate solutions from
+def generate_initial_conditions(n):
+    ICs_list = []
+    # Produce n random samples for initial conditions
+    for r in range(n):
+        x_pos = random.rand()
+        y_pos = random.rand()
+        a = 1 + random.rand()
+        IC = a*exp(-((x-x_pos)**2)/0.01-((y-y_pos)**2)/0.01)
+        ICs_list.append(IC)
+    return ICs_list
+
+
 # Set up test problem
 # Domain
 Lx = Ly = 1
 nx = ny = 5
 mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
 x,y = SpatialCoordinate(mesh)
-dt = 0.1
+dt = 0.001
 
-# Define the list of initial conditions to use to generate solutions from
-initial_condtions = [0.1*sin(pi*x)*sin(pi*y)]
+# Produce u, f and t for 10 timesteps, for a range of initial conditions
+point_data_list = []
+global_data_list = []
+initial_conditions = generate_initial_conditions(5)
 
-# Produce u, f and t for 10 timesteps, for each of these initial conditions
-data_list = []
-for IC in initial_condtions:
+for IC in initial_conditions:
+    print("this is a new initial condition")
     sln = solve_with_IC(mesh=mesh, ntimesteps=10, dt=0.1, IC=IC)
     # extract f and u at (x,y) points from (f,u,t) solutions
     for s in sln:
@@ -79,36 +95,60 @@ for IC in initial_condtions:
             x_func = Function(fn_s).assign(Constant(i))
             y_func = Function(fn_s).assign(Constant(j))
             # concatenate list of (f,u,t,x,y) function solutions
-            data_list.append((f_func, u_func, t_func, x_func, y_func))
+            point_data_list.append((f_func, u_func, t_func, x_func, y_func))
+        # concatenate global data as a list of (f,u,t) functions
+        global_data_list.append((s[0], s[1], t_func))
 
 
 # Save the data in train and test sets to checkpoint file
 dataset_dir = os.path.join(
         "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
         "heat_problem_example_data")
-ntrain = 0.8 * len(data_list)
-ntest= 0.2 * len(data_list)
-print("Number of training examples:", ntrain)
-print("Number of testing examples:", ntest)
+ntrain_pointwise = 0.8 * len(point_data_list)
+ntest_pointwise = 0.2 * len(point_data_list)
+print("Number of point-data training examples:", ntrain_pointwise)
+print("Number of point-data testing examples:", ntest_pointwise)
+ntrain_global = 0.8 * len(global_data_list)
+ntest_global = 0.2 * len(global_data_list)
+print("Number of global training examples:", ntrain_global)
+print("Number of global testing examples:", ntest_global)
 
-# Save train data
-with CheckpointFile(os.path.join(dataset_dir, "train_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntrain
+# Save point-wise train data
+with CheckpointFile(os.path.join(dataset_dir, "train_point_data.h5"), "w") as afile:
+    afile.h5pyfile["n"]  = ntrain_pointwise
     afile.save_mesh(mesh)
-    for i, (f, u, t, x, y) in enumerate(data_list):
+    for i, (f, u, t, x, y) in enumerate(point_data_list):
         afile.save_function(f, idx=i, name="target_f")
         afile.save_function(u, idx=i, name="u")
         afile.save_function(t, idx=i, name="t")
         afile.save_function(x, idx=i, name="x")
         afile.save_function(y, idx=i, name="y")
 
-# Save test data
-with CheckpointFile(os.path.join(dataset_dir, "test_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntest
+# Save point-wise test data
+with CheckpointFile(os.path.join(dataset_dir, "test_point_data.h5"), "w") as afile:
+    afile.h5pyfile["n"]  = ntest_pointwise
     afile.save_mesh(mesh)
-    for i, (f, u, t, x, y) in enumerate(data_list):
+    for i, (f, u, t, x, y) in enumerate(point_data_list):
         afile.save_function(f, idx=i, name="target_f")
         afile.save_function(u, idx=i, name="u")
         afile.save_function(t, idx=i, name="t")
         afile.save_function(x, idx=i, name="x")
         afile.save_function(y, idx=i, name="y")
+
+# Save global train data
+with CheckpointFile(os.path.join(dataset_dir, "train_global_data.h5"), "w") as afile:
+    afile.h5pyfile["n"]  = ntrain_global
+    afile.save_mesh(mesh)
+    for i, (f, u, t) in enumerate(global_data_list):
+        afile.save_function(f, idx=i, name="target_f")
+        afile.save_function(u, idx=i, name="u")
+        afile.save_function(t, idx=i, name="t")
+
+# Save global test data
+with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
+    afile.h5pyfile["n"]  = ntest_global
+    afile.save_mesh(mesh)
+    for i, (f, u, t) in enumerate(global_data_list):
+        afile.save_function(f, idx=i, name="target_f")
+        afile.save_function(u, idx=i, name="u")
+        afile.save_function(t, idx=i, name="t")

@@ -1,14 +1,14 @@
 """"
-A script to solve the heat equation with a forcing term.
-The equation is solved in time with the forward Euler method.
+A script to produce data by solving the heat equation with a forcing term, using variuos initial
+conditions. The equation is solved in time with the forward Euler method.
 """
 import os
 from firedrake import *
 from gusto import *
 import numpy as np
 from numpy import random
-from numpy.random import default_rng
 from tqdm.auto import tqdm, trange
+from sklearn.model_selection import train_test_split
 
 def advance_one_timestep(u_in, mesh, V, bcs, time):
     k = Constant(1.)
@@ -21,7 +21,7 @@ def advance_one_timestep(u_in, mesh, V, bcs, time):
     F = (inner((u - u_)/dt, v) + inner(k * grad(u), grad(v)) - inner(f, v)) * dx
     u_.assign(u_in)
     # Solve PDE (using LU factorisation)
-    solve(F == 0, u)
+    solve(F == 0, u, bcs=bcs)
     u_.assign(u)
     return u
 
@@ -75,80 +75,30 @@ global_data_list = []
 initial_conditions = generate_initial_conditions(5)
 
 for IC in initial_conditions:
-    print("this is a new initial condition")
-    sln = solve_with_IC(mesh=mesh, ntimesteps=10, dt=0.1, IC=IC)
+    sln = solve_with_IC(mesh=mesh, ntimesteps=10, dt=dt, IC=IC)
     # extract f and u at (x,y) points from (f,u,t) solutions
     for s in sln:
         f = s[0]
         u = s[1]
         t = s[2]
-        print("this is the time:", t)
         for i, j in mesh.coordinates.dat.data:
-            print("this is (x,y):", i,j)
             f_eval = f.at(i,j)
             u_eval = u.at(i,j)
-            # f, u, t, x, y must all be Firedrake functions
-            fn_s = mesh.coordinates.function_space()
-            f_func = Function(fn_s).assign(Constant(f_eval))
-            u_func = Function(fn_s).assign(Constant(u_eval))
-            t_func = Function(fn_s).assign(Constant(t))
-            x_func = Function(fn_s).assign(Constant(i))
-            y_func = Function(fn_s).assign(Constant(j))
-            # concatenate list of (f,u,t,x,y) function solutions
-            point_data_list.append((f_func, u_func, t_func, x_func, y_func))
+            # concatenate list of (f,u,t,x,y) solutions
+            point_data_list.append((f_eval, u_eval, t, i, j))
         # concatenate global data as a list of (f,u,t) functions
-        global_data_list.append((s[0], s[1], t_func))
+        global_data_list.append((s[0], s[1], t))
 
 
-# Save the data in train and test sets to checkpoint file
+# Split point data into train and test sets using scikitlearn
+train_pointwise, test_pointwise = train_test_split(point_data_list, test_size=0.2, random_state=42)
+print("Number of point-data training examples:", len(train_pointwise))
+print("Number of point-data testing examples:", len(test_pointwise))
+
+# Save the data in train and test sets as numpy arrays
 dataset_dir = os.path.join(
         "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
         "heat_problem_example_data")
-ntrain_pointwise = 0.8 * len(point_data_list)
-ntest_pointwise = 0.2 * len(point_data_list)
-print("Number of point-data training examples:", ntrain_pointwise)
-print("Number of point-data testing examples:", ntest_pointwise)
-ntrain_global = 0.8 * len(global_data_list)
-ntest_global = 0.2 * len(global_data_list)
-print("Number of global training examples:", ntrain_global)
-print("Number of global testing examples:", ntest_global)
-
-# Save point-wise train data
-with CheckpointFile(os.path.join(dataset_dir, "train_point_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntrain_pointwise
-    afile.save_mesh(mesh)
-    for i, (f, u, t, x, y) in enumerate(point_data_list):
-        afile.save_function(f, idx=i, name="target_f")
-        afile.save_function(u, idx=i, name="u")
-        afile.save_function(t, idx=i, name="t")
-        afile.save_function(x, idx=i, name="x")
-        afile.save_function(y, idx=i, name="y")
-
-# Save point-wise test data
-with CheckpointFile(os.path.join(dataset_dir, "test_point_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntest_pointwise
-    afile.save_mesh(mesh)
-    for i, (f, u, t, x, y) in enumerate(point_data_list):
-        afile.save_function(f, idx=i, name="target_f")
-        afile.save_function(u, idx=i, name="u")
-        afile.save_function(t, idx=i, name="t")
-        afile.save_function(x, idx=i, name="x")
-        afile.save_function(y, idx=i, name="y")
-
-# Save global train data
-with CheckpointFile(os.path.join(dataset_dir, "train_global_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntrain_global
-    afile.save_mesh(mesh)
-    for i, (f, u, t) in enumerate(global_data_list):
-        afile.save_function(f, idx=i, name="target_f")
-        afile.save_function(u, idx=i, name="u")
-        afile.save_function(t, idx=i, name="t")
-
-# Save global test data
-with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
-    afile.h5pyfile["n"]  = ntest_global
-    afile.save_mesh(mesh)
-    for i, (f, u, t) in enumerate(global_data_list):
-        afile.save_function(f, idx=i, name="target_f")
-        afile.save_function(u, idx=i, name="u")
-        afile.save_function(t, idx=i, name="t")
+# Save pointdata as numpy arrays
+np.save(os.path.join(dataset_dir, 'numpy_point_train_data'), train_pointwise)
+np.save(os.path.join(dataset_dir, 'numpy_point_test_data'), test_pointwise)

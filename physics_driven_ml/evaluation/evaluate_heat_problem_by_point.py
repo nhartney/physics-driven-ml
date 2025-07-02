@@ -57,18 +57,17 @@ if __name__ == "__main__":
     logger = get_logger("Evaluation")
 
     data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/")
-    dataset = "heat_problem_example_data"
+    dataset = "heat_problem_validation_data"
     batch_size = 1
     device = "cpu"
     evaluation_metric = "L2"
-    eval_set = "test"
     model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_by_point/"
-    model_version = "heat_problem_by_point_epoch-19-error_0.00000"
+    model_version = "heat_problem_by_point_epoch-6-error_0.00000"
 
     # Load dataset
     dataset_dir = os.path.join(data_dir, "datasets", dataset)
     logger.info(f"Loading dataset from {dataset_dir}\n")
-    dataset = PointDataset(numpy_data=os.path.join(dataset_dir, "numpy_point_test_data.npy"),
+    dataset = PointDataset(numpy_data=os.path.join(dataset_dir, "numpy_point_validate_data.npy"),
                            data_dir=data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 

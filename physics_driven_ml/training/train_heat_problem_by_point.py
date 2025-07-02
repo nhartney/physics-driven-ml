@@ -17,7 +17,7 @@ from firedrake.ml.pytorch import torch_operator
 from physics_driven_ml.dataset_processing import PointDataset
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import get_logger
-from physics_driven_ml.evaluation import evaluate
+from physics_driven_ml.evaluation import evaluate_by_point
 
 
 def train(model, device, train_dl, dev_dl):
@@ -25,7 +25,7 @@ def train(model, device, train_dl, dev_dl):
     Train the model on a given dataset.
     """
     learning_rate = 5e-5
-    epochs = 50
+    epochs = 20
     device = device
 
     optimiser = optim.AdamW(model.parameters(), lr=learning_rate, eps=1e-8)
@@ -45,8 +45,8 @@ def train(model, device, train_dl, dev_dl):
             model.zero_grad()
 
             # separate input and target f out of the data tensor
-            inputs = batch[:,:4]
-            target_f = batch[:,4]
+            inputs = batch[:, 1:5]
+            target_f = batch[:,0]
 
             # forward pass
             network_f = model(inputs)[:,0]
@@ -62,10 +62,29 @@ def train(model, device, train_dl, dev_dl):
 
         print(f'Finished epoch {epoch_num}, latest loss {loss}')
 
-    logger.info(f"Total loss: {total_loss/train_steps}")
-        
+        logger.info(f"Total loss: {total_loss/train_steps}")
+
+        # Evaluate this version of the model on the test set
+        error = evaluate_by_point(model, dev_dl, disable_tqdm=True)
+        logger.info(f"L2 error from this model, evaluated on the test set: {error}")
+
+        # Save best-performing model
+        if error < best_error or epoch_num == 0:
+            best_error = error
+            # Create directory for trained models
+            name_dir = f"heat_problem_by_point_epoch-{epoch_num}-error_{best_error:.5f}"
+            model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models"
+            model_dir = os.path.join(model_dir, "heat_problem_by_point", name_dir)
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
+            # Save model
+            logger.info(f"Saving model checkpoint to {model_dir}\n")
+            # Take care of distributed/parallel training
+            model_to_save = (model.module if hasattr(model, "module") else model)
+            torch.save(model_to_save.state_dict(), os.path.join(model_dir, "model.pt"))
 
     return model
+
 
 if __name__ == "__main__":
     logger = get_logger("Training")

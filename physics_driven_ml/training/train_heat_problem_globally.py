@@ -13,7 +13,7 @@ from torch.utils.data import Subset
 
 from firedrake import *
 from firedrake_adjoint import *
-from firedrake.ml.pytorch import torch_operator
+from firedrake.ml.pytorch import torch_operator, to_torch
 from firedrake.__future__ import interpolate
 
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
@@ -58,7 +58,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
 
             subset_dl = DataLoader(subset, batch_size=batch_size, shuffle=False)
             batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
-            global_target_f = batch.target_fd[0]
+            global_target_f = batch.target
 
             # Do a forward pass on all points in the data subset
             network_out = forward_pass_by_point(subset, model)
@@ -66,13 +66,12 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             # Interpolate this to a Firedrake function
             with torch.no_grad():
                 global_network_f = interpolate_to_firedrake_function(train_global_dl, subset_dl, network_out)
-
-            # put target_f on to the same mesh as network_f (the VOM)
-            fs = FunctionSpace(global_network_f.function_space().mesh(), "DG", 0)
-            target_f_on_data_mesh = Function(fs).interpolate(global_target_f)
             
+            # Now make the Firedrake function a PyTorch tensor
+            global_network_prediction = to_torch(global_network_f)
+          
             # Define L2-loss using Firedrake
-            loss = H(global_network_f, target_f_on_data_mesh)
+            loss = H(global_network_prediction, global_target_f)
 
             # Backprop and perform Adam optimisation
             loss.backward()
@@ -163,7 +162,6 @@ def create_VOM(train_global_dl, subset_dl):
         x_locs = data_sample[:,2].item()
         y_locs = data_sample[:,3].item()
         coordinates.append((x_locs,y_locs))
-    print("these are the coords:", coordinates)
     vom = VertexOnlyMesh(mesh, coordinates, redundant=False)
     return vom
 
@@ -171,22 +169,17 @@ def create_VOM(train_global_dl, subset_dl):
 def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
     vom = create_VOM(train_global_dl, subset_dl)
 
-    # P0DG = FunctionSpace(vom, "DG", 0)
-    # P0DG_input_ordering = FunctionSpace(vom.input_ordering, "DG", 0)
-    # point_data_input_ordering = Function(P0DG_input_ordering)
-    # point_data_input_ordering.dat.data_wo[:] = network_f
-    # point_data = assemble(interpolate(point_data_input_ordering, P0DG))
-
+    # start with a VOM that is structured like the data
     P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
     field_vomio = Function(P0DG_io)
     field_vomio.dat.data_wo[:] = network_f
 
-    # We now interpolate onto the vertex only mesh that does not have
+    # Next interpolate onto the vertex only mesh that does not have
     # the input ordering
     P0DG = FunctionSpace(vom, "DG", 0)
-    field_vom = interpolate(field_vomio, P0DG)
+    field_vom = assemble(interpolate(field_vomio, P0DG))
 
-    # interpolate from VOM to the parent mesh (global data mesh)
+    # interpolate from this VOM to the parent mesh (global data mesh)
     src_mesh = train_global_dl.dataset.mesh
     # find the function space that the global target function is on
     Vsrc = train_global_dl.dataset.fs
@@ -195,12 +188,11 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
     f_data_star = Cofunction(Vsrc.dual())
     I.interpolate(f_star, transpose=True, output=f_data_star)
     field = f_data_star.riesz_representation(riesz_map="l2")
-    return point_data
+    return field
 
 
 def assemble_L2_error(network_f, target_f):
      # for debugging:
-    print("this is the type returned by assemble_L2_error:", type(assemble(0.5 * (network_f - target_f) ** 2 * dx)))
     return assemble(0.5 * (network_f - target_f) ** 2 * dx)
 
 
@@ -247,25 +239,24 @@ if __name__ == "__main__":
 
     # -- Construct the Firedrake torch operators -- #
  
-    # extract a single dataloader from the subset to get the mesh coordinates from
-    point_train_data_subsets = sub_sample_point_data(train_point_dl)
-    one_subset = point_train_data_subsets[0]
-    one_subset_dl = DataLoader(one_subset, batch_size=batch_size, shuffle=False)
-    # use the coordinates from this dataloader to define the VertexOnlyMesh
-    vom = create_VOM(train_global_dl, one_subset_dl)
     # set up functions for the predicted f and the target f
-    V = FunctionSpace(vom, "DG", 0)
-    global_network_f = Function(V)
-    target_f_on_data_mesh = Function(V)
+    V = FunctionSpace(train_global_dl.dataset.mesh, "DG", 0)
+    f_pred = Function(V)
+    f_exact = Function(V)
 
     # Set tape locally to only record the operations relevant to H on the computational graph
     with set_working_tape() as tape:
         # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||f - f_exact||^{2}_{L2})
-        F = ReducedFunctional(assemble_L2_error(global_network_f, target_f_on_data_mesh),
-                                [Control(global_network_f), Control(target_f_on_data_mesh)])
-        print("this is the type of F:", type(F))
+        F = ReducedFunctional(assemble_L2_error(f_pred, f_exact),
+                                [Control(f_pred), Control(f_exact)])
+        # debugging
+        with f_pred.vector().dat.vec_wo as v:
+            print("this is the shape of f_pred vector array (goes into Control):", v.array.shape)
+        with f_exact.vector().dat.vec_wo as v:
+            print("this is the shape of f_exact vector array (goes into Control):", v.array.shape)
+
+        
         H = torch_operator(F)
-        print("this is the type of H:", type(H))
 
     # -- Training -- #
 

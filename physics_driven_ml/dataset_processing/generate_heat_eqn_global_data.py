@@ -95,12 +95,18 @@ with CheckpointFile(global_train_dir, "w") as afile:
         afile.save_mesh(mesh)
         for i, (f, label) in enumerate(global_train):
             afile.save_function(f, idx=i, name="target_f")
+            # could make the label a function and save it too,
+            # or maybe there is another way to save constants?
+            # afile.save_function(, label, idx=i, name="label")
 
 with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
         afile.h5pyfile["n"] = len(global_test)
         afile.save_mesh(mesh)
         for i, (f, label) in enumerate(global_test):
             afile.save_function(f, idx=i, name="target_f")
+            # could make the label a function and save it too,
+            # or maybe there is another way to save constants?
+            # afile.save_function(, label, idx=i, name="label")
 
 # Save point data (u,t,x,y,label) to numpy arrays
 np.save(point_train_dir, point_train)

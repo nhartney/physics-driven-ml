@@ -152,6 +152,8 @@ if __name__ == "__main__":
 
     def assemble_L2_error(x, x_exact):
         """Assemble L2-loss"""
+        # for debugging:
+        print("this is the type returned by Nacime's asssemble_L2_error:", type(assemble(0.5 * (x - x_exact) ** 2 * dx)))
         return assemble(0.5 * (x - x_exact) ** 2 * dx)
 
     solve_pde = functools.partial(solve_pde, f=f, V=V, bcs=bcs)
@@ -172,7 +174,9 @@ if __name__ == "__main__":
     with set_working_tape() as tape:
         # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||κ - κ_exact||^{2}_{L2})
         F = ReducedFunctional(assemble_L2_error(k, k_exact), [Control(k), Control(k_exact)])
+        print("this is the type of Nacime's F:", type(F))
         H = torch_operator(F)
+        print("this is the type of Nacime's H:", type(H))
 
     # -- Set the model -- #
 

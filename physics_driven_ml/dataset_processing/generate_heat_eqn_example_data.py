@@ -106,3 +106,6 @@ if __name__ == "__main__":
     # Save pointdata as numpy arrays
     np.save(os.path.join(dataset_dir, 'numpy_point_train_data'), train_pointwise)
     np.save(os.path.join(dataset_dir, 'numpy_point_test_data'), test_pointwise)
+
+    # Save global f (Firedrake function) using checkpointing
+    # Need to follow the same train/test split as the point data

@@ -16,7 +16,6 @@ class PDEDataset2(Dataset):
     """
 
     def __init__(self, dataset, dataset_split, data_dir):
-        print("we're in the init of PDEDataset2")
         # Check dataset directory
         dataset_dir = os.path.join(data_dir, dataset)
         if not os.path.exists(dataset_dir):
@@ -27,10 +26,10 @@ class PDEDataset2(Dataset):
         mesh, batch_elements = self.load_dataset(os.path.join(dataset_dir, name_file))
         self.mesh = mesh
         self.batch_elements_fd = batch_elements
+        self.fs = self.batch_elements_fd[0].function_space()
 
 
     def load_dataset(self, fname):
-        print("we're in the load_dataset of PDEDataset2")
         data = []
         # Load data
         with CheckpointFile(fname, "r") as afile:
@@ -45,24 +44,20 @@ class PDEDataset2(Dataset):
 
 
     def __len__(self):
-        print("we're in the len of PDEDataset2")
         return len(self.batch_elements_fd)
 
 
     def __getitem__(self, idx):
-        print("we're in the get_item of PDEDataset2")
         target_fd = self.batch_elements_fd[idx]
         # Convert Firedrake functions to PyTorch tensors
-        target = [to_torch(e) for e in [target_fd]]
+        target = to_torch(target_fd)
         return BatchElement2(target=target, target_fd=target_fd)
 
 
     def collate(self, batch_elements):
-        print("using custom collate function")
         # Workaround to enable custom data types (e.g. firedrake.Function) in PyTorch dataloaders
         # See: https://pytorch.org/docs/stable/data.html#working-with-collate-fn
         batch_size = len(batch_elements)
-        n = max(e.u_obs.size(-1) for e in batch_elements)
         m = max(e.target.size(-1) for e in batch_elements)
 
         target = torch.zeros(batch_size, m, dtype=batch_elements[0].target.dtype)

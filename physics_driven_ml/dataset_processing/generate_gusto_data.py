@@ -4,8 +4,9 @@ diffusion coefficients. The equation is solved in time with the forward Euler
 method.
 """
 import os
-from firedrake import (RectangleMesh, SpatialCoordinate, Function,
-                       CheckpointFile, interpolate)
+from firedrake import (PeriodicRectangleMesh, SpatialCoordinate, Function,
+                       CheckpointFile, interpolate, RectangleMesh,
+                       IcosahedralSphereMesh)
 from gusto import *
 import numpy as np
 from numpy.random import default_rng
@@ -15,7 +16,7 @@ from tqdm.auto import tqdm, trange
 def random_field(V, N, m=5, σ=0.6, tqdm=False, seed=2023):
     """Generate N 2D random fields with m modes."""
     rng = default_rng(seed)
-    x, y = SpatialCoordinate(V.ufl_domain())
+    x, y, _ = SpatialCoordinate(V.ufl_domain())
     fields = []
     for _ in trange(N, disable=not tqdm):
         r = 0
@@ -28,11 +29,11 @@ def random_field(V, N, m=5, σ=0.6, tqdm=False, seed=2023):
     return fields
 
 
-def generate_pde_solutions(domain, V, kappas, f, dt):
+def generate_pde_solutions(domain, V, kappas, f, dt, mesh):
     
     solutions = []
     for kappa in kappas:
-        diffusion_params = DiffusionParameters(kappa=kappa)
+        diffusion_params = DiffusionParameters(mesh=mesh, kappa=kappa)
         equation = DiffusionEquation(domain, V, "q",
                                      diffusion_parameters=diffusion_params)
 
@@ -65,11 +66,12 @@ def generate_diffusion_data(ntrain, ntest):
     # ------------------------------------------------------------------------ #
 
     # Domain
-    Lx = Ly = 1
-    nx = ny = 50
+    # Lx = Ly = 1
+    # nx = ny = 50
+    R = 6371220
     dt = 0.01
 
-    mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
+    mesh = IcosahedralSphereMesh(radius=R, refinement_level=3, name="mesh")
     domain = Domain(mesh, dt, "CG", 1)
 
     V = domain.spaces("DG")
@@ -79,7 +81,7 @@ def generate_diffusion_data(ntrain, ntest):
     # Initial conditions
     # ------------------------------------------------------------------------ #
 
-    x,y = SpatialCoordinate(mesh)
+    x,y,z = SpatialCoordinate(mesh)
     f = Function(V).interpolate(sin(pi * x) * sin(pi * y))
 
     # kappas = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
@@ -89,7 +91,7 @@ def generate_diffusion_data(ntrain, ntest):
     logger.info('Generate PDE solutions')
 
     # Generate PDE solutions
-    solutions = generate_pde_solutions(domain, V, kappas, f, dt)
+    solutions = generate_pde_solutions(domain, V, kappas, f, dt, mesh)
     
     # Add noise to PDE solutions
     logger.info('Add noise to PDE solutions')
@@ -110,7 +112,7 @@ def generate_diffusion_data(ntrain, ntest):
     # save training and testing data
     dataset_dir = os.path.join(
         "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
-        "gusto_diffusion_data")
+        "gusto_diffusion_data_sphere")
 
     # Save train data
     with CheckpointFile(os.path.join(dataset_dir, "train_data.h5"), "w") as afile:
@@ -118,7 +120,7 @@ def generate_diffusion_data(ntrain, ntest):
         afile.save_mesh(mesh)
         for i, (k, u, u_obs) in enumerate(zip(train_kappas, train_solns,
                                               train_obs)):
-            afile.save_function(k, idx=i, name="kappa")
+            afile.save_function(k, idx=i, name="k")
             afile.save_function(u_obs, idx=i, name="u_obs")
 
     # Save test data
@@ -127,9 +129,9 @@ def generate_diffusion_data(ntrain, ntest):
         afile.save_mesh(mesh)
         for i, (k, u, u_obs) in enumerate(zip(test_kappas, test_solns,
                                               test_obs)):
-            afile.save_function(k, idx=i, name="kappa")
+            afile.save_function(k, idx=i, name="k")
             afile.save_function(u_obs, idx=i, name="u_obs")
 
 
 # call function to generate data
-generate_diffusion_data(4, 2)
+generate_diffusion_data(50, 10)

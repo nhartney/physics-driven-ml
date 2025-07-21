@@ -240,7 +240,7 @@ if __name__ == "__main__":
     # -- Construct the Firedrake torch operators -- #
  
     # set up functions for the predicted f and the target f
-    V = FunctionSpace(train_global_dl.dataset.mesh, "DG", 0)
+    V = train_global_dl.dataset.fs
     f_pred = Function(V)
     f_exact = Function(V)
 

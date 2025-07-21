@@ -11,6 +11,8 @@ from tqdm.auto import tqdm, trange
 from torch.utils.data import DataLoader
 from torch.utils.data import Subset
 
+from torch.autograd import Variable
+
 from firedrake import *
 from firedrake_adjoint import *
 from firedrake.ml.pytorch import torch_operator, to_torch
@@ -72,6 +74,9 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
           
             # Define L2-loss using Firedrake
             loss = H(global_network_prediction, global_target_f)
+            
+            # Set requires_grad for the loss to be True
+            loss = Variable(loss, requires_grad=True)
 
             # Backprop and perform Adam optimisation
             loss.backward()
@@ -114,7 +119,7 @@ def forward_pass_by_point(point_train_data_subset, model):
     network_out = []
     point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
     train_steps = len(point_train_dl)
-    for step_num, batch in tqdm(enumerate(point_train_dl), total=train_steps):
+    for step_num, batch in enumerate(point_train_dl):
         model.zero_grad()
         # extract inputs from the tensor
         inputs = batch[:, 1:5]
@@ -249,13 +254,6 @@ if __name__ == "__main__":
         # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||f - f_exact||^{2}_{L2})
         F = ReducedFunctional(assemble_L2_error(f_pred, f_exact),
                                 [Control(f_pred), Control(f_exact)])
-        # debugging
-        with f_pred.vector().dat.vec_wo as v:
-            print("this is the shape of f_pred vector array (goes into Control):", v.array.shape)
-        with f_exact.vector().dat.vec_wo as v:
-            print("this is the shape of f_exact vector array (goes into Control):", v.array.shape)
-
-        
         H = torch_operator(F)
 
     # -- Training -- #

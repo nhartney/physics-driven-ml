@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 import os
 import argparse
 import functools
@@ -15,7 +18,7 @@ from torch.autograd import Variable
 
 from firedrake import *
 from firedrake_adjoint import *
-from firedrake.ml.pytorch import torch_operator, to_torch
+from firedrake.ml.pytorch import fem_operator, to_torch
 from firedrake.__future__ import interpolate
 
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
@@ -31,7 +34,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
     Train the model on a given dataset.
     """
     learning_rate = 5e-5
-    epochs = 20
+    epochs = 4
     device = device
 
     optimiser = optim.AdamW(model.parameters(), lr=learning_rate, eps=1e-8)
@@ -66,18 +69,24 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             network_out = forward_pass_by_point(subset, model)
             
             # Interpolate this to a Firedrake function
-            with torch.no_grad():
-                global_network_f = interpolate_to_firedrake_function(train_global_dl, subset_dl, network_out)
+            # with torch.no_grad():
+            global_network_f = interpolate_to_firedrake_function(train_global_dl, subset_dl, network_out)
             
             # Now make the Firedrake function a PyTorch tensor
             global_network_prediction = to_torch(global_network_f)
           
             # Define L2-loss using Firedrake
             loss = H(global_network_prediction, global_target_f)
-            
-            # Set requires_grad for the loss to be True
-            loss = Variable(loss, requires_grad=True)
+            total_loss += loss.item()
+            print("has the custom backward been called already?")
+            print("this is the type of our loss that backward will be called on:", type(loss))
 
+            print("this is the dict information about loss:", loss.__dict__)
+            print("this is the dir information about loss:", loss.__dir__)
+
+            # Set requires_grad for the loss to be True
+            # loss = Variable(loss, requires_grad=True)
+            # loss.requires_grad = True
             # Backprop and perform Adam optimisation
             loss.backward()
             torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_grad_norm)
@@ -120,7 +129,7 @@ def forward_pass_by_point(point_train_data_subset, model):
     point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
     train_steps = len(point_train_dl)
     for step_num, batch in enumerate(point_train_dl):
-        model.zero_grad()
+        # model.zero_grad()
         # extract inputs from the tensor
         inputs = batch[:, 1:5]
         # forward pass
@@ -188,10 +197,15 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
     src_mesh = train_global_dl.dataset.mesh
     # find the function space that the global target function is on
     Vsrc = train_global_dl.dataset.fs
+
     I = Interpolator(TestFunction(Vsrc), P0DG)
     f_star = field_vom.riesz_representation(riesz_map="l2")
     f_data_star = Cofunction(Vsrc.dual())
-    I.interpolate(f_star, transpose=True, output=f_data_star)
+    I.interpolate(f_star, adjoint=True, output=f_data_star)
+
+    # Do this with the new interpolate behaviour
+    # f_data_star = assemble(interpolate(f_star, P0DG, adjoint=True))
+
     field = f_data_star.riesz_representation(riesz_map="l2")
     return field
 
@@ -254,7 +268,11 @@ if __name__ == "__main__":
         # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||f - f_exact||^{2}_{L2})
         F = ReducedFunctional(assemble_L2_error(f_pred, f_exact),
                                 [Control(f_pred), Control(f_exact)])
-        H = torch_operator(F)
+        print("this is the type of F:", type(F))
+        print("this is the dir information about F:", F.__dir__)
+        H = fem_operator(F)
+        print("this is the the type of H:", type(H))
+        print("this is the dir information about H:", H.__dir__)
 
     # -- Training -- #
 

@@ -1,2 +1,4 @@
 from physics_driven_ml.evaluation.evaluate import evaluate   # noqa: F401
 from physics_driven_ml.evaluation.evaluate_heat_problem_by_point import evaluate_by_point
+from physics_driven_ml.evaluation.attempt2_evaluate_heat_problem_globally import evaluate_globally_by_point
+

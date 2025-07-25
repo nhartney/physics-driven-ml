@@ -14,17 +14,17 @@ from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import ModelConfig, get_logger
 from physics_driven_ml.dataset_processing import PointDataset, BatchedElement
 
-from train_heat_problem_globally import sub_sample_point_data
-from attempt2_train_heat_problem_globally import calculate_global_loss
+from train_heat_problem_globally import sub_sample_point_data, calculate_global_loss
 
 
-def evaluate_globally_by_point(model, point_dl, global_dl):
+def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
     """
     Evaluate the model on a given dataset.
     Compute the L2 error of the NN for every sample in the evaluation set, and then
     add these errors up to give an overall error for that model. (The 'sample' in the
     evaluation set is a global example, made up of all points in the domain.)
     """
+    batch_size = 1
 
     model.eval()
 

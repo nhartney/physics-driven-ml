@@ -22,8 +22,9 @@ from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, Batc
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import get_logger
 from physics_driven_ml.evaluation import evaluate_by_point
+from physics_driven_ml.evaluation import evaluate_globally_by_point
 
-from train_heat_problem_globally import sub_sample_point_data
+from train_heat_problem_globally import sub_sample_point_data, calculate_global_loss
 
 
 def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_global_dl):
@@ -73,34 +74,26 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
 
         logger.info(f"Total loss: {total_loss/train_steps}")
 
+        # Evaluate this version of the model on the test set
+        error = evaluate_globally_by_point(model, test_point_dl, test_global_dl)
+        logger.info(f"L2 error from this model, evaluated on the test set: {error}")
+
+        # Save best-performing model
+        if error < best_error or epoch_num == 0:
+            best_error = error
+            # Create directory for trained models
+            name_dir = f"heat_problem_globally_epoch-{epoch_num}-error_{best_error:.5f}"
+            model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models"
+            model_dir = os.path.join(model_dir, "heat_problem_globally", name_dir)
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
+            # Save model
+            logger.info(f"Saving model checkpoint to {model_dir}\n")
+            # Take care of distributed/parallel training
+            model_to_save = (model.module if hasattr(model, "module") else model)
+            torch.save(model_to_save.state_dict(), os.path.join(model_dir, "model.pt"))
+
     return model
-
-
-def calculate_global_loss(point_train_data_subset, model):
-    """
-    This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
-    up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
-    returns a list of network predictions at each point, which can then be interpolated to a Firedrake
-    function for a global network estimate of f.
-    """
-    l2_loss = torch.nn.MSELoss()
-    loss_list = []
-    point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
-    train_steps = len(point_train_dl)
-    for step_num, batch in enumerate(point_train_dl):
-        # model.zero_grad()
-        # extract inputs and target from the tensor
-        inputs = batch[:, 1:5]
-        target_f = batch[:,0]
-        # forward pass
-        network_point_f = model(inputs)[:,0]
-        # compute L2 loss at the point
-        loss = l2_loss(network_point_f, target_f)  
-        # add point loss to total loss list
-        loss_list.append(loss)
-    # sum together all point losses in the list
-    global_loss = sum(loss_list)
-    return global_loss
 
 
 if __name__ == "__main__":

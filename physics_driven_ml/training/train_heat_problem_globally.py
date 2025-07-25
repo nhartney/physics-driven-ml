@@ -215,6 +215,34 @@ def assemble_L2_error(network_f, target_f):
     return assemble(0.5 * (network_f - target_f) ** 2 * dx)
 
 
+def calculate_global_loss(point_train_data_subset, model):
+    """
+    This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
+    up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
+    returns a list of network predictions at each point, which can then be interpolated to a Firedrake
+    function for a global network estimate of f.
+    """
+    batch_size = 1
+    l2_loss = torch.nn.MSELoss()
+    loss_list = []
+    point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
+    train_steps = len(point_train_dl)
+    for step_num, batch in enumerate(point_train_dl):
+        # model.zero_grad()
+        # extract inputs and target from the tensor
+        inputs = batch[:, 1:5]
+        target_f = batch[:,0]
+        # forward pass
+        network_point_f = model(inputs)[:,0]
+        # compute L2 loss at the point
+        loss = l2_loss(network_point_f, target_f)
+        # add point loss to total loss list
+        loss_list.append(loss)
+    # sum together all point losses in the list
+    global_loss = sum(loss_list)
+    return global_loss
+
+
 if __name__ == "__main__":
     logger = get_logger("Training")
 

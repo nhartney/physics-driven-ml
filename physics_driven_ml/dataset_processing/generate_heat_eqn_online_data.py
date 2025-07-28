@@ -9,9 +9,9 @@ target full PDE solution.
 import os
 import numpy as np
 from firedrake import *
-import numpy as np
+# import numpy as np
 from numpy import random
-from tqdm.auto import tqdm, trange
+# from tqdm.auto import tqdm, trange
 
 from physics_driven_ml.utils import get_logger
 
@@ -19,7 +19,7 @@ from physics_driven_ml.utils import get_logger
 # Define the list of initial conditions to use to generate solutions from
 def generate_initial_conditions(mesh, n):
     ICs_list = []
-    x,y = SpatialCoordinate(mesh)
+    x, y = SpatialCoordinate(mesh)
     # Produce n random samples for initial conditions
     for r in range(n):
         x_pos = random.rand()
@@ -70,7 +70,7 @@ def train_test_split(point_data_list, global_data_list, train_proportion):
 
 # Solve the heat equation with forcing
 def solve_pde_with_forcing(mesh, ntimesteps, dt, V, IC, bcs):
-    x,y = SpatialCoordinate(mesh)
+    x, y = SpatialCoordinate(mesh)
     k = Constant(1)
     u = Function(V)
     u_ = Function(V)
@@ -111,19 +111,18 @@ if __name__ == "__main__":
         u0, u = solve_pde_with_forcing(mesh=mesh, ntimesteps=2, dt=dt, V=V, IC=IC, bcs=bcs)
         # extract u at (x,y) points from solutions to use as input data
         for i, j in mesh.coordinates.dat.data:
-            point_u0 = u0.at(i,j)
+            point_u0 = u0.at(i, j)
             point_data_list.append((point_u0, i, j, label))
         global_data_list.append((u0, u, label))
-        
-    
+
     # Split the data into train and test sets
     point_train, point_test, global_train, global_test = train_test_split(point_data_list, global_data_list, 0.8)
 
     # Save point data and global data
     dataset_dir = os.path.join(
-            "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
-            "heat_problem_online_data")
-    
+        "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
+        "heat_problem_online_data")
+
     point_train_dir = os.path.join(dataset_dir, 'numpy_point_train_data')
     point_test_dir = os.path.join(dataset_dir, 'numpy_point_test_data')
     global_train_dir = os.path.join(dataset_dir, "train_global_data.h5")
@@ -135,7 +134,7 @@ if __name__ == "__main__":
         afile.save_mesh(mesh)
         for i, (u0, u, label) in enumerate(global_train):
             afile.save_function(u, idx=i, name="target_u")
-    
+
     with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
         afile.h5pyfile["n"] = len(global_test)
         afile.save_mesh(mesh)

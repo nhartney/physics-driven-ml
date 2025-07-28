@@ -9,9 +9,7 @@ target full PDE solution.
 import os
 import numpy as np
 from firedrake import *
-# import numpy as np
 from numpy import random
-# from tqdm.auto import tqdm, trange
 
 from physics_driven_ml.utils import get_logger
 

@@ -12,9 +12,7 @@ from tqdm.auto import tqdm
 
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import ModelConfig, get_logger
-from physics_driven_ml.dataset_processing import PointDataset, BatchedElement
-
-from train_heat_problem_globally import sub_sample_point_data, calculate_global_loss
+from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2
 
 
 def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
@@ -54,3 +52,48 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
     L2_error = total_error**0.5
     L2_error /= eval_steps
     return L2_error
+
+if __name__ == "__main__":
+
+    from physics_driven_ml.training import sub_sample_point_data, calculate_global_loss
+
+    logger = get_logger("Evaluation")
+
+    data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/")
+    dataset = "heat_problem_global_validation_data"
+    batch_size = 1
+    device = "cpu"
+    evaluation_metric = "L2"
+    model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_globally/"
+    model_version = "heat_problem_globally_epoch-18-error_0.00807"
+
+    # Load dataset
+    dataset_dir = os.path.join(data_dir, "datasets", dataset)
+    logger.info(f"Loading dataset from {dataset_dir}\n")
+
+    point_dataset = PointDataset(numpy_data=os.path.join(dataset_dir, "numpy_point_validate_data.npy"),
+                           data_dir=data_dir)
+    point_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    global_dataset = PDEDataset2(dataset="global_validate_data.h5", dataset_split="",
+                                       data_dir=dataset_dir)
+    global_dataloader = DataLoader(global_dataset, batch_size=batch_size,
+                                 collate_fn=global_dataset.collate, shuffle=False)
+
+    # Load model
+    model_dir = os.path.join(model_dir, model_version)
+
+    logger.info(f"Loading model checkpoint from {model_dir}\n")
+    model = PointNN()
+    # Load pretrained model state dict
+    pretrained = torch.load(os.path.join(model_dir, "model.pt"))
+    model.load_state_dict(pretrained)
+
+     # Set double precision (default Firedrake type)
+    model.double()
+    # Move model to device
+    model.to(device)
+
+    # Evaluate model
+    error = evaluate_globally_by_point(model, point_dataloader, global_dataloader)
+    logger.info(f"\n\t Error (metric: {evaluation_metric}): {error:.4e}")

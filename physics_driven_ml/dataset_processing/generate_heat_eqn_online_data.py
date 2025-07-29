@@ -131,12 +131,15 @@ if __name__ == "__main__":
         afile.h5pyfile["n"] = len(global_train)
         afile.save_mesh(mesh)
         for i, (u0, u, label) in enumerate(global_train):
+            afile.save_function(u0, idx=i, name="initial_u")
             afile.save_function(u, idx=i, name="target_u")
+
 
     with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
         afile.h5pyfile["n"] = len(global_test)
         afile.save_mesh(mesh)
         for i, (u0, u, label) in enumerate(global_test):
+            afile.save_function(u0, idx=i, name="initial_u")
             afile.save_function(u, idx=i, name="target_u")
 
     # point data (u,t,x,y,label)

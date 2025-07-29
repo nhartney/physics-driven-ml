@@ -7,7 +7,8 @@ import numpy as np
 import torch
 
 from typing import NamedTuple, List, Optional
-from firedrake import CheckpointFile
+from firedrake import CheckpointFile, Function
+from torch import Tensor
 from firedrake.ml.pytorch import *
 from torch.utils.data import Dataset, Subset
 
@@ -16,15 +17,19 @@ from collections import defaultdict
 
 class BatchElement2(NamedTuple):
     """Batch element for PDE-based datasets as a tuple of PyTorch and Firedrake tensors."""
-    u0: Tensor  # shape = (m,)
+    u0: Tensor
+    u_target: Tensor
     u0_fd: Function
+    u_target_fd: Function
 
 
 class BatchedElement2(NamedTuple):
     """Represent tensors for a list/batch of `BatchElement` that have been collated."""
     u0: Tensor  # shape = (batch_size, m)
+    u_target: Tensor
     u0_fd: List[Function]
-    batch_elements: Optional[List[BatchElement]] = None
+    u_target_fd: List[Function]
+    batch_elements: Optional[List[BatchElement2]] = None
 
 
 class PointDataset(Dataset):
@@ -56,18 +61,17 @@ class PDEDataset2(Dataset):
     Dataset reader for PDE-based datasets generated from the global heat example problem.
     """
 
-    def __init__(self, dataset, dataset_split, data_dir):
+    def __init__(self, dataset, data_dir):
         # Check dataset directory
-        dataset_dir = os.path.join(data_dir, dataset)
-        if not os.path.exists(dataset_dir):
-            raise ValueError(f"Dataset directory {os.path.abspath(dataset_dir)} does not exist")
+        data = os.path.join(data_dir, dataset)
+        if not os.path.exists(data):
+            raise ValueError(f"Dataset directory {os.path.abspath(data)} does not exist")
 
         # Get mesh and batch elements (Firedrake functions)
-        name_file = dataset_split + "_global_data.h5"
-        mesh, batch_elements = self.load_dataset(os.path.join(dataset_dir, name_file))
+        mesh, batch_elements = self.load_dataset(data)
         self.mesh = mesh
         self.batch_elements_fd = batch_elements
-        self.fs = self.batch_elements_fd[0].function_space()
+        self.fs = self.batch_elements_fd[0][0].function_space()
 
     def load_dataset(self, fname):
         data = []
@@ -78,34 +82,42 @@ class PDEDataset2(Dataset):
             mesh = afile.load_mesh("mesh")
             # Load data
             for i in range(n):
-                target_f = afile.load_function(mesh, "target_f", idx=i)
-                data.append((target_f))
+                initial_u = afile.load_function(mesh, "initial_u", idx=i)
+                target_u = afile.load_function(mesh, "target_u", idx=i)
+                data.append((initial_u, target_u))
         return mesh, data
 
     def __len__(self):
         return len(self.batch_elements_fd)
 
     def __getitem__(self, idx):
-        target_fd = self.batch_elements_fd[idx]
+        u0_fd, u_target_fd = self.batch_elements_fd[idx]
         # Convert Firedrake functions to PyTorch tensors
-        target = to_torch(target_fd)
-        return BatchElement2(target=target, target_fd=target_fd)
+        u0, u_target = [to_torch(e) for e in [u0_fd, u_target_fd]]
+        return BatchElement2(u0=u0, u_target=u_target,
+                             u0_fd=u0_fd,
+                             u_target_fd=u_target_fd)
 
     def collate(self, batch_elements):
         # Workaround to enable custom data types (e.g. firedrake.Function) in PyTorch dataloaders
         # See: https://pytorch.org/docs/stable/data.html#working-with-collate-fn
         batch_size = len(batch_elements)
-        m = max(e.target.size(-1) for e in batch_elements)
+        n = max(e.u0.size(-1) for e in batch_elements)
+        m = max(e.u_target.size(-1) for e in batch_elements)
 
-        target = torch.zeros(batch_size, m, dtype=batch_elements[0].target.dtype)
-        target_fd = []
+        u0 = torch.zeros(batch_size, n, dtype=batch_elements[0].u0.dtype)
+        u_target = torch.zeros(batch_size, m, dtype=batch_elements[0].u_target.dtype)
+        u0_fd = []
+        u_target_fd = []
         for i, e in enumerate(batch_elements):
-            target[i, :] = e.target
-            target_fd.append(e.target_fd)
+            u0[i, :] = e.u0
+            u_target[i, :] = e.u_target
+            u0_fd.append(e.u0_fd)
+            u_target_fd.append(e.u_target_fd)
 
-        return BatchedElement2(target=target,
-                               target_fd=target_fd,
-                               batch_elements=batch_elements)
+        return BatchedElement2(u0=0, u_target=u_target,
+                              u0_fd=u0_fd, u_target_fd=u_target_fd,
+                              batch_elements=batch_elements)
 
 
 def list_duplicates(labels):

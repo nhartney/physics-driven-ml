@@ -24,8 +24,11 @@ from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, Batc
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import get_logger
 
+from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sample_point_data
+
+
 def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_global_dl,
-          mesh, V, bcs):
+         bcs):
     """
     Train the model on a given dataset.
     """
@@ -53,30 +56,38 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
         if len(point_train_data_subsets) == train_steps:
             print("correct! the number of data subsets matches the number of global samples")
         
+        # Extract the mesh from the data
+        mesh = train_global_dl.dataset.mesh
+        V = FunctionSpace(mesh, "CG", 1)
+        
         for step_num, (subset, global_sample) in tqdm(enumerate(list(zip(point_train_data_subsets, train_global_dl))),
                                                     total=train_steps):
             
             model.zero_grad()
 
-            # Compute a dynamics solution  after one timestep by solving the PDE with no forcing
+            # Compute a dynamics solution after one timestep by solving the PDE with no forcing
             global_batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
-            global_u0 = global_batch.u0_fd[0] # this is a list of functions
+            global_u0 = global_batch.u0_fd[0]
+
             dynamics1 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=global_u0, bcs=bcs)
 
             # Produce a network prediction for f using the same initial condition
-            point_dl1 = DataLoader(subset, batch_size=batch_size, shuffle=False)
             # Do a forward pass on all points in the data subset
-            network_out1 = forward_pass_by_point(point_dl1, model)
+            network_out1 = forward_pass_by_point(subset, model)
             # Interpolate this to a Firedrake function
+            point_dl1 = DataLoader(subset, batch_size=batch_size, shuffle=False)
             # with torch.no_grad():
             network_f1 = interpolate_to_firedrake_function(train_global_dl, point_dl1, network_out1)
 
             # Add the network's prediction for f to the dynamics solution
             u1 = network_f1 + dynamics1
+            print("now we have u1")
+            print("this is the type of u1:", type(u1))
+            print("the type of u1 should printed")
 
             # The point data from this solution becomes input for the next call to
             # the network
-            u1_point_data = dynamics_output_to_NN_input(u1)
+            u1_point_data = convert_dy_out_to_NN_in(u1)
 
             # Take another timestep (dynamics and then network f)
             dynamics2 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=u1, bcs=bcs)
@@ -90,7 +101,18 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             # Add the network's prediction for f to the dynamics solution
             u2 = network_f2 + dynamics2
 
-            # u2 is the thing we compare the target to
+            # Extract the target to compare u2 to
+            target = global_batch.u_fd
+
+            # Loss is difference between two Firedrake functions
+            loss = H(u2, target)
+            total_loss += loss.item()
+
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_grad_norm)
+            optimiser.step()
+
+        logger.info(f"Total loss: {total_loss/train_steps}")
 
 
 def forward_pass_by_point(point_train_data_subset, model):
@@ -102,7 +124,10 @@ def forward_pass_by_point(point_train_data_subset, model):
     """
     network_out = []
     point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
+    print("this is the type of point_train_dataloader:", type(point_train_dl))
+    print("this is the type of point_train_data_subset:", type(point_train_data_subset))
     train_steps = len(point_train_dl)
+    print("this is the length of the point data in the dataloader:", train_steps)
     for step_num, batch in enumerate(point_train_dl):
         # model.zero_grad()
         # extract inputs from the tensor
@@ -164,7 +189,8 @@ def solve_pde_without_forcing(mesh, ntimesteps, dt, V, IC, bcs):
     u = Function(V)
     u_ = Function(V)
     v = TestFunction(V)
-    u0 = Function(V).interpolate(IC)
+    # u0 = Function(V).interpolate(IC)
+    u0 = IC
     u_in = u0
     for n in range(ntimesteps):
         F = (inner((u - u_)/dt, v) + inner(k * grad(u), grad(v))) * dx
@@ -174,8 +200,9 @@ def solve_pde_without_forcing(mesh, ntimesteps, dt, V, IC, bcs):
         u_.assign(u)
     return u
 
+
 # Convert the output from the dynamics step to point data for the network
-def dynamics_output_to_NN_input(u):
+def convert_dy_out_to_NN_in(u):
     point_data_list = []
     mesh = u.mesh
     for i, j in mesh.coordinates.dat.data:
@@ -183,26 +210,73 @@ def dynamics_output_to_NN_input(u):
         point_data_list.append((point_u, i, j))
     point_dataset = PointDataset(numpy_data=point_data_list)
     return point_dataset
-    
+
 
 if __name__ == "__main__":
     logger = get_logger("Training")
 
-    # Set up PDE dynamics problem
-    Lx = Ly = 1
-    nx = ny = 5
-    mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
-    dt = 0.001
-    V = FunctionSpace(mesh, "CG", 1)
-    bcs = [DirichletBC(V, Constant(0.0), "on_boundary")]
-
     # Set up for NN
     data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/datasets")
-    data_file_name = "heat_problem_example_global_data"
+    data_file_name = "heat_problem_online_data"
     batch_size = 1
     device = "cpu"
 
     # Set the model
     model = PointNN()
 
-    # -- Load dataset -- #
+    # -- Load datasets -- #
+
+    # Point train
+    point_train_dataset = PointDataset(numpy_data=os.path.join(data_dir, data_file_name, "numpy_point_train_data.npy"),
+                                        data_dir=data_dir)
+    train_point_dl = DataLoader(point_train_dataset, batch_size=batch_size, shuffle=False)
+
+    # Point test
+    point_test_dataset = PointDataset(numpy_data=os.path.join(data_dir, data_file_name, "numpy_point_test_data.npy"),
+                                        data_dir=data_dir)
+    test_point_dl = DataLoader(point_test_dataset, batch_size=batch_size, shuffle=False)
+
+    # Global train
+    global_train_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
+                                       data_dir=data_dir)
+    train_global_dl = DataLoader(global_train_dataset, batch_size=batch_size,
+                                 collate_fn=global_train_dataset.collate, shuffle=False)
+    
+    # Global test
+    global_test_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
+                                      data_dir=data_dir)
+    test_global_dl = DataLoader(global_test_dataset, batch_size=batch_size,
+                                collate_fn=global_train_dataset.collate, shuffle=False)
+
+    # Set double precision to match types
+    model.double()
+    # Move model to device
+    model.to(device)
+
+    # Set up PDE dynamics problem
+    dt = 0.001
+    mesh = global_train_dataset.mesh
+    V = FunctionSpace(mesh, "CG", 1)
+    bcs = [DirichletBC(V, Constant(0.0), "on_boundary")]
+
+    # -- Define the Firedrake operations to be composed with PyTorch -- #
+
+    def assemble_L2_error(x, x_exact):
+        # Assemble L2 loss
+        return assemble(0.5 * (x - x_exact) ** 2 * dx)
+    
+    # -- Construct the Firedrake torch operators -- #
+
+    u_pred = Function(V)
+    u_exact = Function(V)
+
+    # Set tape locally to only record the operations relevant to H on the computational graph
+    with set_working_tape() as tape:
+        # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||κ - κ_exact||^{2}_{L2})
+        F = ReducedFunctional(assemble_L2_error(u_pred, u_exact), [Control(u_pred), Control(u_exact)])
+        H = fem_operator(F)
+
+    # -- Training -- #
+
+    train(model, device=device, train_point_dl=train_point_dl, train_global_dl=train_global_dl,
+        test_point_dl=test_point_dl, test_global_dl=test_global_dl, bcs=bcs)

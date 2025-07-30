@@ -38,12 +38,15 @@ class PointDataset(Dataset):
     saved as numpy arrays.
     """
 
-    def __init__(self, numpy_data, data_dir):
+    def __init__(self, numpy_data, data_dir=None):
         # Check dataset directory
-        dataset_dir = os.path.join(data_dir, "datasets", numpy_data)
-        if not os.path.exists(dataset_dir):
-            raise ValueError(f"Dataset directory {os.path.abspath(dataset_dir)} does not exist")
-        self.numpy_list = np.load(numpy_data)
+        if data_dir is not None:
+            dataset_dir = os.path.join(data_dir, "datasets", numpy_data)
+            if not os.path.exists(dataset_dir):
+                raise ValueError(f"Dataset directory {os.path.abspath(dataset_dir)} does not exist")
+            self.numpy_list = np.load(numpy_data)
+        else:
+            self.numpy_list = numpy_data
 
     def __len__(self):
         return len(self.numpy_list)

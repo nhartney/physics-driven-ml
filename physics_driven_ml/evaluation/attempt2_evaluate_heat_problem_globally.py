@@ -14,6 +14,8 @@ from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import ModelConfig, get_logger
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2
 
+from physics_driven_ml.training.train_heat_problem_globally import sub_sample_point_data, calculate_global_loss
+
 
 def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
     """
@@ -33,7 +35,7 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
 
     if len(point_data_subsets) != eval_steps:
         print("The number of data subsets does not match the number of global samples")
-
+ 
     
     for step_num, (subset, global_sample) in tqdm(enumerate(list(zip(point_data_subsets, global_dl))),
                                                     total=eval_steps, disable=disable_tqdm):
@@ -55,8 +57,6 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
 
 if __name__ == "__main__":
 
-    from physics_driven_ml.training import sub_sample_point_data, calculate_global_loss
-
     logger = get_logger("Evaluation")
 
     data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/")
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     device = "cpu"
     evaluation_metric = "L2"
     model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_globally/"
-    model_version = "heat_problem_globally_epoch-18-error_0.00807"
+    model_version = "heat_problem_globally_epoch-18-error_0.00494"
 
     # Load dataset
     dataset_dir = os.path.join(data_dir, "datasets", dataset)
@@ -73,7 +73,7 @@ if __name__ == "__main__":
 
     point_dataset = PointDataset(numpy_data=os.path.join(dataset_dir, "numpy_point_validate_data.npy"),
                            data_dir=data_dir)
-    point_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    point_dataloader = DataLoader(point_dataset, batch_size=batch_size, shuffle=False)
 
     global_dataset = PDEDataset2(dataset="global_validate_data.h5", dataset_split="",
                                        data_dir=dataset_dir)

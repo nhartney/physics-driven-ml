@@ -34,6 +34,7 @@ for IC in initial_conditions:
         f = s[0]
         u = s[1]
         t = s[2]
+        label += 1
         for i, j in mesh.coordinates.dat.data:
             f_eval = f.at(i,j)
             u_eval = u.at(i,j)

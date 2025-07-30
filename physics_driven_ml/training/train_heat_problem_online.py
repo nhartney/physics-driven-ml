@@ -24,13 +24,14 @@ from firedrake.__future__ import interpolate
 
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
 from physics_driven_ml.models import PointNN
+from physics_driven_ml.forward_models import HeatEquation
 from physics_driven_ml.utils import get_logger
 
 from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sample_point_data
 
 
-def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_global_dl,
-         bcs):
+def train(model, pde_model, device, train_point_dl, train_global_dl,
+          test_point_dl, test_global_dl,):
     """
     Train the model on a given dataset.
     """
@@ -42,6 +43,8 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
 
     max_grad_norm = 1.0
     best_error = 0.
+
+    V = pde_model.V
 
     # Training loop
     for epoch_num in trange(epochs):
@@ -58,10 +61,6 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
         if len(point_train_data_subsets) == train_steps:
             print("correct! the number of data subsets matches the number of global samples")
         
-        # Extract the mesh from the data
-        mesh = train_global_dl.dataset.mesh
-        V = FunctionSpace(mesh, "CG", 1)
-        
         for step_num, (subset, global_sample) in tqdm(enumerate(list(zip(point_train_data_subsets, train_global_dl))),
                                                     total=train_steps):
             
@@ -71,7 +70,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             global_batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
             global_u0 = global_batch.u0_fd[0]
 
-            dynamics1 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=global_u0, bcs=bcs)
+            dynamics1 = pde_model.timestep(ntimesteps=1, u_ic=global_u0)
 
             # Produce a network prediction for f using the same initial condition
             # Do a forward pass on all points in the data subset
@@ -91,7 +90,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             u1_point_data = convert_dy_out_to_NN_in(u1_func)
 
             # Take another timestep (dynamics and then network f)
-            dynamics2 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=u1_func, bcs=bcs)
+            dynamics2 = pde_model.timestep(ntimesteps=1, u_ic=u1_func)
             # Produce a network prediction for f using the pointdata version of the same initial condition
             point_dl2 = DataLoader(u1_point_data, batch_size=batch_size, shuffle=False)
             # Do a forward pass on all points in the data
@@ -185,25 +184,6 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
     return field
 
 
-# Solve the heat equation without forcing (dynamics step)
-def solve_pde_without_forcing(mesh, ntimesteps, dt, V, IC, bcs):
-    x, y = SpatialCoordinate(mesh)
-    k = Constant(1)
-    u = Function(V)
-    u_ = Function(V)
-    v = TestFunction(V)
-    # u0 = Function(V).interpolate(IC)
-    u0 = IC
-    u_in = u0
-    for n in range(ntimesteps):
-        F = (inner((u - u_)/dt, v) + inner(k * grad(u), grad(v))) * dx
-        u_.assign(u_in)
-        # Solve PDE (using LU factorisation)
-        solve(F == 0, u, bcs=bcs)
-        u_.assign(u)
-    return u
-
-
 # Convert the output from the dynamics step to point data for the network
 def convert_dy_out_to_NN_in(u):
     point_data_list = []
@@ -257,10 +237,9 @@ if __name__ == "__main__":
     model.to(device)
 
     # Set up PDE dynamics problem
-    dt = 0.001
     mesh = global_train_dataset.mesh
-    V = FunctionSpace(mesh, "CG", 1)
-    bcs = [DirichletBC(V, Constant(0.0), "on_boundary")]
+    # Set PDE forward model
+    pde_model = HeatEquation(mesh, dt=0.001)
 
     # -- Define the Firedrake operations to be composed with PyTorch -- #
 
@@ -270,16 +249,19 @@ if __name__ == "__main__":
     
     # -- Construct the Firedrake torch operators -- #
 
-    u_pred = Function(V)
-    u_exact = Function(V)
+    u_pred = Function(pde_model.V)
+    u_exact = Function(pde_model.V)
 
     # Set tape locally to only record the operations relevant to H on the computational graph
     with set_working_tape() as tape:
-        # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||κ - κ_exact||^{2}_{L2})
+        # Define PyTorch operator for computing the L2-loss
         F = ReducedFunctional(assemble_L2_error(u_pred, u_exact), [Control(u_pred), Control(u_exact)])
         H = fem_operator(F)
 
     # -- Training -- #
 
-    train(model, device=device, train_point_dl=train_point_dl, train_global_dl=train_global_dl,
-        test_point_dl=test_point_dl, test_global_dl=test_global_dl, bcs=bcs)
+    train(model, pde_model, device=device,
+          train_point_dl=train_point_dl,
+          train_global_dl=train_global_dl,
+          test_point_dl=test_point_dl,
+          test_global_dl=test_global_dl)

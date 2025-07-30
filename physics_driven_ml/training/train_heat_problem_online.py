@@ -81,31 +81,35 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
 
             # Add the network's prediction for f to the dynamics solution
             u1 = network_f1 + dynamics1
-            print("now we have u1")
-            print("this is the type of u1:", type(u1))
-            print("the type of u1 should printed")
+            # Convert u1 to a Firedrake function
+            u1_func = Function(V).interpolate(u1)
 
             # The point data from this solution becomes input for the next call to
             # the network
-            u1_point_data = convert_dy_out_to_NN_in(u1)
+            u1_point_data = convert_dy_out_to_NN_in(u1_func)
 
             # Take another timestep (dynamics and then network f)
-            dynamics2 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=u1, bcs=bcs)
+            dynamics2 = solve_pde_without_forcing(mesh, ntimesteps=1, dt=0.001, V=V, IC=u1_func, bcs=bcs)
             # Produce a network prediction for f using the pointdata version of the same initial condition
             point_dl2 = DataLoader(u1_point_data, batch_size=batch_size, shuffle=False)
             # Do a forward pass on all points in the data
-            network_out2 = forward_pass_by_point(point_dl2, model)
+            network_out2 = forward_pass_by_point(u1_point_data, model)
             # Interpolate this to a Firedrake function
             # with torch.no_grad():
             network_f2 = interpolate_to_firedrake_function(train_global_dl, point_dl2, network_out2)
             # Add the network's prediction for f to the dynamics solution
             u2 = network_f2 + dynamics2
+            # Convert this to a Firedrake function
+            u2_func = Function(V).interpolate(u2)
 
             # Extract the target to compare u2 to
-            target = global_batch.u_fd
+            target = global_batch.u_target
+
+            # Now make the Firedrake function a PyTorch tensor
+            u2_tensor = to_torch(u2_func)
 
             # Loss is difference between two Firedrake functions
-            loss = H(u2, target)
+            loss = H(u2_tensor, target)
             total_loss += loss.item()
 
             loss.backward()
@@ -124,14 +128,11 @@ def forward_pass_by_point(point_train_data_subset, model):
     """
     network_out = []
     point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
-    print("this is the type of point_train_dataloader:", type(point_train_dl))
-    print("this is the type of point_train_data_subset:", type(point_train_data_subset))
     train_steps = len(point_train_dl)
-    print("this is the length of the point data in the dataloader:", train_steps)
     for step_num, batch in enumerate(point_train_dl):
         # model.zero_grad()
         # extract inputs from the tensor
-        inputs = batch[:, 1:4]
+        inputs = batch[:, 0:3]
         # forward pass
         network_point_f = model(inputs)[:,0]
         # extract value from the output tensor
@@ -145,8 +146,8 @@ def create_VOM(train_global_dl, subset_dl):
     mesh = train_global_dl.dataset.mesh
     coordinates = []
     for data_sample in subset_dl:
-        x_locs = data_sample[:,2].item()
-        y_locs = data_sample[:,3].item()
+        x_locs = data_sample[:,1].item()
+        y_locs = data_sample[:,2].item()
         coordinates.append((x_locs,y_locs))
     vom = VertexOnlyMesh(mesh, coordinates, redundant=False)
     return vom
@@ -204,7 +205,7 @@ def solve_pde_without_forcing(mesh, ntimesteps, dt, V, IC, bcs):
 # Convert the output from the dynamics step to point data for the network
 def convert_dy_out_to_NN_in(u):
     point_data_list = []
-    mesh = u.mesh
+    mesh = u.function_space().mesh()
     for i, j in mesh.coordinates.dat.data:
         point_u = u.at(i, j)
         point_data_list.append((point_u, i, j))

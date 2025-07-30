@@ -4,6 +4,8 @@ import functools
 
 import numpy as np
 
+from os.path import abspath, dirname
+
 import torch
 import torch.optim as optim
 import torch.autograd as torch_ad
@@ -217,7 +219,7 @@ if __name__ == "__main__":
     logger = get_logger("Training")
 
     # Set up for NN
-    data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/datasets")
+    data_dir = f'{abspath(dirname(__file__))}/../../data/datasets'
     data_file_name = "heat_problem_online_data"
     batch_size = 1
     device = "cpu"

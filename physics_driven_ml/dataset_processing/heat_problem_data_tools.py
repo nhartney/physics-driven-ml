@@ -119,8 +119,8 @@ class PDEDataset2(Dataset):
             u_target_fd.append(e.u_target_fd)
 
         return BatchedElement2(u0=0, u_target=u_target,
-                              u0_fd=u0_fd, u_target_fd=u_target_fd,
-                              batch_elements=batch_elements)
+                               u0_fd=u0_fd, u_target_fd=u_target_fd,
+                               batch_elements=batch_elements)
 
 
 def list_duplicates(labels):

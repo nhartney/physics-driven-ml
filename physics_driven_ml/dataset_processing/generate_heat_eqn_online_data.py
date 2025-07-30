@@ -134,7 +134,6 @@ if __name__ == "__main__":
             afile.save_function(u0, idx=i, name="initial_u")
             afile.save_function(u, idx=i, name="target_u")
 
-
     with CheckpointFile(os.path.join(dataset_dir, "test_global_data.h5"), "w") as afile:
         afile.h5pyfile["n"] = len(global_test)
         afile.save_mesh(mesh)

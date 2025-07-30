@@ -1,6 +1,4 @@
 import os
-import argparse
-import functools
 
 import numpy as np
 
@@ -8,14 +6,10 @@ from os.path import abspath, dirname
 
 import torch
 import torch.optim as optim
-import torch.autograd as torch_ad
 
 from tqdm.auto import tqdm, trange
 
 from torch.utils.data import DataLoader
-from torch.utils.data import Subset
-
-from torch.autograd import Variable
 
 from firedrake import *
 from firedrake_adjoint import *
@@ -24,7 +18,7 @@ from firedrake.__future__ import interpolate
 
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
 from physics_driven_ml.models import PointNN
-from physics_driven_ml.forward_models import HeatEquation
+from physics_driven_ml.forward_models import HeatEquation, GustoHeatEquationModel
 from physics_driven_ml.utils import get_logger
 
 from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sample_point_data
@@ -42,7 +36,6 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
     optimiser = optim.AdamW(model.parameters(), lr=learning_rate, eps=1e-8)
 
     max_grad_norm = 1.0
-    best_error = 0.
 
     V = pde_model.V
 
@@ -60,44 +53,54 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
 
         if len(point_train_data_subsets) == train_steps:
             print("correct! the number of data subsets matches the number of global samples")
-        
-        for step_num, (subset, global_sample) in tqdm(enumerate(list(zip(point_train_data_subsets, train_global_dl))),
-                                                    total=train_steps):
-            
+
+        for step_num, (subset, global_sample) in tqdm(
+                enumerate(list(zip(point_train_data_subsets, train_global_dl))),
+                total=train_steps):
+
             model.zero_grad()
 
-            # Compute a dynamics solution after one timestep by solving the PDE with no forcing
+            # Compute a dynamics solution after one timestep by
+            # solving the PDE with no forcing
             global_batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
             global_u0 = global_batch.u0_fd[0]
 
-            dynamics1 = pde_model.timestep(ntimesteps=1, u_ic=global_u0)
+            dynamics1 = pde_model.advance(ntimesteps=1, u_ic=global_u0)
 
-            # Produce a network prediction for f using the same initial condition
-            # Do a forward pass on all points in the data subset
+            # Produce a network prediction for f using the same
+            # initial condition
+            # Do a forward pass on all points in the
+            # data subset
             network_out1 = forward_pass_by_point(subset, model)
             # Interpolate this to a Firedrake function
             point_dl1 = DataLoader(subset, batch_size=batch_size, shuffle=False)
             # with torch.no_grad():
-            network_f1 = interpolate_to_firedrake_function(train_global_dl, point_dl1, network_out1)
+            network_f1 = interpolate_to_firedrake_function(train_global_dl,
+                                                           point_dl1,
+                                                           network_out1)
 
             # Add the network's prediction for f to the dynamics solution
             u1 = network_f1 + dynamics1
             # Convert u1 to a Firedrake function
             u1_func = Function(V).interpolate(u1)
 
-            # The point data from this solution becomes input for the next call to
-            # the network
+            # The point data from this solution becomes input for the
+            # next call to the network
             u1_point_data = convert_dy_out_to_NN_in(u1_func)
 
             # Take another timestep (dynamics and then network f)
-            dynamics2 = pde_model.timestep(ntimesteps=1, u_ic=u1_func)
-            # Produce a network prediction for f using the pointdata version of the same initial condition
-            point_dl2 = DataLoader(u1_point_data, batch_size=batch_size, shuffle=False)
+            dynamics2 = pde_model.advance(ntimesteps=1, u_ic=u1_func)
+            # Produce a network prediction for f using the pointdata
+            # version of the same initial condition
+            point_dl2 = DataLoader(u1_point_data, batch_size=batch_size,
+                                   shuffle=False)
             # Do a forward pass on all points in the data
             network_out2 = forward_pass_by_point(u1_point_data, model)
             # Interpolate this to a Firedrake function
             # with torch.no_grad():
-            network_f2 = interpolate_to_firedrake_function(train_global_dl, point_dl2, network_out2)
+            network_f2 = interpolate_to_firedrake_function(train_global_dl,
+                                                           point_dl2,
+                                                           network_out2)
             # Add the network's prediction for f to the dynamics solution
             u2 = network_f2 + dynamics2
             # Convert this to a Firedrake function
@@ -128,14 +131,14 @@ def forward_pass_by_point(point_train_data_subset, model):
     function for a global network estimate of f.
     """
     network_out = []
-    point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
-    train_steps = len(point_train_dl)
+    point_train_dl = DataLoader(point_train_data_subset,
+                                batch_size=batch_size, shuffle=False)
     for step_num, batch in enumerate(point_train_dl):
         # model.zero_grad()
         # extract inputs from the tensor
         inputs = batch[:, 0:3]
         # forward pass
-        network_point_f = model(inputs)[:,0]
+        network_point_f = model(inputs)[:, 0]
         # extract value from the output tensor
         network_point_f_value = network_point_f.item()
         # add value to list
@@ -147,14 +150,15 @@ def create_VOM(train_global_dl, subset_dl):
     mesh = train_global_dl.dataset.mesh
     coordinates = []
     for data_sample in subset_dl:
-        x_locs = data_sample[:,1].item()
-        y_locs = data_sample[:,2].item()
-        coordinates.append((x_locs,y_locs))
+        x_locs = data_sample[:, 1].item()
+        y_locs = data_sample[:, 2].item()
+        coordinates.append((x_locs, y_locs))
     vom = VertexOnlyMesh(mesh, coordinates, redundant=False)
     return vom
 
 
 def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
+
     vom = create_VOM(train_global_dl, subset_dl)
 
     # start with a VOM that is structured like the data
@@ -168,7 +172,6 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
     field_vom = assemble(interpolate(field_vomio, P0DG))
 
     # interpolate from this VOM to the parent mesh (global data mesh)
-    src_mesh = train_global_dl.dataset.mesh
     # find the function space that the global target function is on
     Vsrc = train_global_dl.dataset.fs
 
@@ -210,26 +213,40 @@ if __name__ == "__main__":
     # -- Load datasets -- #
 
     # Point train
-    point_train_dataset = PointDataset(numpy_data=os.path.join(data_dir, data_file_name, "numpy_point_train_data.npy"),
-                                        data_dir=data_dir)
-    train_point_dl = DataLoader(point_train_dataset, batch_size=batch_size, shuffle=False)
+    point_train_dataset = PointDataset(
+        numpy_data=os.path.join(data_dir,
+                                data_file_name,
+                                "numpy_point_train_data.npy"),
+        data_dir=data_dir)
+    train_point_dl = DataLoader(point_train_dataset,
+                                batch_size=batch_size, shuffle=False)
 
     # Point test
-    point_test_dataset = PointDataset(numpy_data=os.path.join(data_dir, data_file_name, "numpy_point_test_data.npy"),
-                                        data_dir=data_dir)
-    test_point_dl = DataLoader(point_test_dataset, batch_size=batch_size, shuffle=False)
+    point_test_dataset = PointDataset(
+        numpy_data=os.path.join(data_dir,
+                                data_file_name,
+                                "numpy_point_test_data.npy"),
+        data_dir=data_dir)
+    test_point_dl = DataLoader(point_test_dataset,
+                               batch_size=batch_size, shuffle=False)
 
     # Global train
-    global_train_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
-                                       data_dir=data_dir)
-    train_global_dl = DataLoader(global_train_dataset, batch_size=batch_size,
-                                 collate_fn=global_train_dataset.collate, shuffle=False)
-    
+    global_train_dataset = PDEDataset2(
+        dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
+        data_dir=data_dir)
+    train_global_dl = DataLoader(global_train_dataset,
+                                 batch_size=batch_size,
+                                 collate_fn=global_train_dataset.collate,
+                                 shuffle=False)
+
     # Global test
-    global_test_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
-                                      data_dir=data_dir)
-    test_global_dl = DataLoader(global_test_dataset, batch_size=batch_size,
-                                collate_fn=global_train_dataset.collate, shuffle=False)
+    global_test_dataset = PDEDataset2(
+        dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
+        data_dir=data_dir)
+    test_global_dl = DataLoader(global_test_dataset,
+                                batch_size=batch_size,
+                                collate_fn=global_train_dataset.collate,
+                                shuffle=False)
 
     # Set double precision to match types
     model.double()
@@ -239,14 +256,14 @@ if __name__ == "__main__":
     # Set up PDE dynamics problem
     mesh = global_train_dataset.mesh
     # Set PDE forward model
-    pde_model = HeatEquation(mesh, dt=0.001)
+    pde_model = GustoHeatEquationModel(mesh, dt=0.001)
 
     # -- Define the Firedrake operations to be composed with PyTorch -- #
 
     def assemble_L2_error(x, x_exact):
         # Assemble L2 loss
         return assemble(0.5 * (x - x_exact) ** 2 * dx)
-    
+
     # -- Construct the Firedrake torch operators -- #
 
     u_pred = Function(pde_model.V)

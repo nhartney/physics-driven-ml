@@ -192,12 +192,9 @@ def solve_pde_without_forcing(mesh, ntimesteps, dt, V, IC, bcs):
     u = Function(V)
     u_ = Function(V)
     v = TestFunction(V)
-    # u0 = Function(V).interpolate(IC)
-    u0 = IC
-    u_in = u0
+    u_.assign(IC)
     for n in range(ntimesteps):
         F = (inner((u - u_)/dt, v) + inner(k * grad(u), grad(v))) * dx
-        u_.assign(u_in)
         # Solve PDE (using LU factorisation)
         solve(F == 0, u, bcs=bcs)
         u_.assign(u)

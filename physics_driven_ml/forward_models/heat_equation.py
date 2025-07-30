@@ -21,14 +21,13 @@ class HeatEquation(object):
                           + inner(k * grad(self.u), grad(v))) * dx
                          )
 
-    def advance(self, ntimesteps, u_ic):
-        self.u_.assign(u_ic)
-        for n in range(ntimesteps):
+    def advance(self, u_out, u_in, ndt):
+        self.u_.assign(u_in)
+        for n in range(ndt):
             # Solve PDE (using LU factorisation)
             solve(self.residual == 0, self.u, bcs=self.bcs)
             self.u_.assign(self.u)
-        return self.u
-
+        u_out.assign(self.u_)
 
 class GustoHeatEquationModel(object):
 
@@ -37,7 +36,10 @@ class GustoHeatEquationModel(object):
         V = FunctionSpace(mesh, "CG", 1)
         self.V = V
         domain.spaces.add_space("CG", V)
-        output = OutputParameters(dirname="gusto_heat_equation")
+        output = OutputParameters(dirname="gusto_heat_equation",
+                                  dump_vtus=False,
+                                  dump_nc=False,
+                                  dump_diagnostics=False)
         io = IO(domain, output)
         params = DiffusionParameters(domain.mesh, kappa=1)
         eqn = DiffusionEquation(domain, V, "f", params)
@@ -52,10 +54,10 @@ class GustoHeatEquationModel(object):
         self.stepper = Timestepper(eqn, scheme, io,
                                    spatial_methods=diffusion_methods)
 
-    def advance(self, ntimesteps, u_ic):
-        u0 = self.stepper.fields("f")
-        u0.assign(u_ic)
-        tmax = float(self.stepper.dt * ntimesteps)
-        self.stepper.run(0, tmax)
+    def advance(self, u_out, u_in, ndt):
 
-        return u0
+        u0 = self.stepper.fields("f")
+        u0.assign(u_in)
+        tmax = float(self.stepper.dt * ndt)
+        self.stepper.run(0, tmax)
+        u_out.assign(self.stepper.fields("f"))

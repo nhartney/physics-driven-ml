@@ -25,7 +25,7 @@ from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sam
 
 
 def train(model, pde_model, device, train_point_dl, train_global_dl,
-          test_point_dl, test_global_dl,):
+          test_point_dl, test_global_dl, max_rollout_steps=2, ndt=1):
     """
     Train the model on a given dataset.
     """
@@ -37,7 +37,11 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
 
     max_grad_norm = 1.0
 
+    # set up some functions
     V = pde_model.V
+    u = Function(V)
+    dyn_in = Function(V)
+    dyn_out = Function(V)
 
     # Training loop
     for epoch_num in trange(epochs):
@@ -60,64 +64,51 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
 
             model.zero_grad()
 
-            # Compute a dynamics solution after one timestep by
-            # solving the PDE with no forcing
+            # get initial condition from data
             global_batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
             global_u0 = global_batch.u0_fd[0]
 
-            dynamics1 = pde_model.advance(ntimesteps=1, u_ic=global_u0)
+            # set initial values for dynamics and network
+            dyn_in.assign(global_u0)
+            nn_in = subset
+            for rollout_step in range(max_rollout_steps):
 
-            # Produce a network prediction for f using the same
-            # initial condition
-            # Do a forward pass on all points in the
-            # data subset
-            network_out1 = forward_pass_by_point(subset, model)
-            # Interpolate this to a Firedrake function
-            point_dl1 = DataLoader(subset, batch_size=batch_size, shuffle=False)
-            # with torch.no_grad():
-            network_f1 = interpolate_to_firedrake_function(train_global_dl,
-                                                           point_dl1,
-                                                           network_out1)
+                # run forward PDE model for ndt timesteps
+                pde_model.advance(dyn_out, dyn_in, ndt)
 
-            # Add the network's prediction for f to the dynamics solution
-            u1 = network_f1 + dynamics1
-            # Convert u1 to a Firedrake function
-            u1_func = Function(V).interpolate(u1)
+                # Produce a network prediction for f using the same
+                # initial condition
+                # Do a forward pass on all points in the
+                # data subset
+                nn_out = forward_pass_by_point(nn_in, model)
+                # Interpolate this to a Firedrake function
+                point_dl = DataLoader(nn_in, batch_size=batch_size,
+                                       shuffle=False)
+                nn_out = interpolate_to_firedrake_function(train_global_dl,
+                                                           point_dl,
+                                                           nn_out)
 
-            # The point data from this solution becomes input for the
-            # next call to the network
-            u1_point_data = convert_dy_out_to_NN_in(u1_func)
+                # Add the network's prediction to the dynamics solution
+                # This is the input for the next dynamics step
+                dyn_in.interpolate(dyn_out + nn_out)
 
-            # Take another timestep (dynamics and then network f)
-            dynamics2 = pde_model.advance(ntimesteps=1, u_ic=u1_func)
-            # Produce a network prediction for f using the pointdata
-            # version of the same initial condition
-            point_dl2 = DataLoader(u1_point_data, batch_size=batch_size,
-                                   shuffle=False)
-            # Do a forward pass on all points in the data
-            network_out2 = forward_pass_by_point(u1_point_data, model)
-            # Interpolate this to a Firedrake function
-            # with torch.no_grad():
-            network_f2 = interpolate_to_firedrake_function(train_global_dl,
-                                                           point_dl2,
-                                                           network_out2)
-            # Add the network's prediction for f to the dynamics solution
-            u2 = network_f2 + dynamics2
-            # Convert this to a Firedrake function
-            u2_func = Function(V).interpolate(u2)
+                # The point data from this solution becomes input for the
+                # next call to the network
+                nn_in = convert_to_points(dyn_in)
 
             # Extract the target to compare u2 to
             target = global_batch.u_target
 
-            # Now make the Firedrake function a PyTorch tensor
-            u2_tensor = to_torch(u2_func)
+            # Now make the output of the rollout model a pytorch tensor
+            u_tensor = to_torch(dyn_in)
 
             # Loss is difference between two Firedrake functions
-            loss = H(u2_tensor, target)
+            loss = H(u_tensor, target)
             total_loss += loss.item()
 
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_grad_norm)
+            torch.nn.utils.clip_grad_norm_(parameters=model.parameters(),
+                                           max_norm=max_grad_norm)
             optimiser.step()
 
         logger.info(f"Total loss: {total_loss/train_steps}")
@@ -188,7 +179,7 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
 
 
 # Convert the output from the dynamics step to point data for the network
-def convert_dy_out_to_NN_in(u):
+def convert_to_points(u):
     point_data_list = []
     mesh = u.function_space().mesh()
     for i, j in mesh.coordinates.dat.data:
@@ -256,7 +247,8 @@ if __name__ == "__main__":
     # Set up PDE dynamics problem
     mesh = global_train_dataset.mesh
     # Set PDE forward model
-    pde_model = GustoHeatEquationModel(mesh, dt=0.001)
+    # pde_model = GustoHeatEquationModel(mesh, dt=0.001)
+    pde_model = HeatEquation(mesh, dt=0.001)
 
     # -- Define the Firedrake operations to be composed with PyTorch -- #
 

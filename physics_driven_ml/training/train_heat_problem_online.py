@@ -40,7 +40,6 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
     # set up some functions
     V = pde_model.V
     u = Function(V)
-    dyn_in = Function(V)
     dyn_out = Function(V)
 
     # Training loop
@@ -69,12 +68,12 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
             global_u0 = global_batch.u0_fd[0]
 
             # set initial values for dynamics and network
-            dyn_in.assign(global_u0)
+            u.assign(global_u0)
             nn_in = subset
             for rollout_step in range(max_rollout_steps):
 
                 # run forward PDE model for ndt timesteps
-                pde_model.advance(dyn_out, dyn_in, ndt)
+                pde_model.advance(dyn_out, u, ndt)
 
                 # Produce a network prediction for f using the same
                 # initial condition
@@ -83,24 +82,24 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
                 nn_out = forward_pass_by_point(nn_in, model)
                 # Interpolate this to a Firedrake function
                 point_dl = DataLoader(nn_in, batch_size=batch_size,
-                                       shuffle=False)
+                                      shuffle=False)
                 nn_out = interpolate_to_firedrake_function(train_global_dl,
                                                            point_dl,
                                                            nn_out)
 
                 # Add the network's prediction to the dynamics solution
                 # This is the input for the next dynamics step
-                dyn_in.interpolate(dyn_out + nn_out)
+                u.interpolate(dyn_out + nn_out)
 
                 # The point data from this solution becomes input for the
                 # next call to the network
-                nn_in = convert_to_points(dyn_in)
+                nn_in = convert_to_points(u)
 
             # Extract the target to compare u2 to
             target = global_batch.u_target
 
             # Now make the output of the rollout model a pytorch tensor
-            u_tensor = to_torch(dyn_in)
+            u_tensor = to_torch(u)
 
             # Loss is difference between two Firedrake functions
             loss = H(u_tensor, target)

@@ -29,6 +29,7 @@ class HeatEquation(object):
             self.u_.assign(self.u)
         u_out.assign(self.u_)
 
+
 class GustoHeatEquationModel(object):
 
     def __init__(self, mesh, dt, create_training_data=False):
@@ -46,9 +47,9 @@ class GustoHeatEquationModel(object):
 
         if create_training_data:
             # if we're creating the training data we need to add the forcing
-            forcing = Function(V)
+            f = Function(V)
             eqn.residual -= physics_label(prognostic(eqn.test * f * dx, "f"))
-        
+
         scheme = BackwardEuler(domain)
         diffusion_methods = [CGDiffusion(eqn, "f", params)]
         self.stepper = Timestepper(eqn, scheme, io,

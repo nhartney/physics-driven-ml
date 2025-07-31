@@ -95,13 +95,13 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
                 # next call to the network
                 nn_in = convert_to_points(u)
 
-            # Extract the target to compare u2 to
+            # Extract the target to compare u to
             target = global_batch.u_target
 
             # Now make the output of the rollout model a pytorch tensor
-            u_tensor = to_torch(u)
+            u_tensor = to_torch(u, requires_grad=True)
 
-            # Loss is difference between two Firedrake functions
+            # Loss is difference between two tensors
             loss = H(u_tensor, target)
             total_loss += loss.item()
 

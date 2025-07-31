@@ -75,7 +75,7 @@ if __name__ == "__main__":
                            data_dir=data_dir)
     point_dataloader = DataLoader(point_dataset, batch_size=batch_size, shuffle=False)
 
-    global_dataset = PDEDataset2(dataset="global_validate_data.h5", dataset_split="",
+    global_dataset = PDEDataset2(dataset=os.path.join(dataset_dir, "global_validate_data.h5"),
                                        data_dir=dataset_dir)
     global_dataloader = DataLoader(global_dataset, batch_size=batch_size,
                                  collate_fn=global_dataset.collate, shuffle=False)

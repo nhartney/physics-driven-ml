@@ -15,15 +15,16 @@ class PDEDataset2(Dataset):
     Dataset reader for PDE-based datasets generated from the global heat example problem.
     """
 
-    def __init__(self, dataset, dataset_split, data_dir):
+    def __init__(self, dataset, data_dir):
         # Check dataset directory
         dataset_dir = os.path.join(data_dir, dataset)
         if not os.path.exists(dataset_dir):
             raise ValueError(f"Dataset directory {os.path.abspath(dataset_dir)} does not exist")
 
         # Get mesh and batch elements (Firedrake functions)
-        name_file = dataset_split + "_global_data.h5"
-        mesh, batch_elements = self.load_dataset(os.path.join(dataset_dir, name_file))
+        # name_file = dataset_split + "_global_data.h5"
+        # mesh, batch_elements = self.load_dataset(os.path.join(dataset_dir, name_file))
+        mesh, batch_elements = self.load_dataset(dataset_dir)
         self.mesh = mesh
         self.batch_elements_fd = batch_elements
         self.fs = self.batch_elements_fd[0].function_space()

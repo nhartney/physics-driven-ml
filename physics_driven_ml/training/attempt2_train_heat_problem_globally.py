@@ -121,14 +121,14 @@ if __name__ == "__main__":
 
    
     # Load train global dataset
-    global_train_dataset = PDEDataset2(dataset="heat_problem_example_global_data",
-                                       dataset_split="train", data_dir=data_dir)
+    global_train_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
+                                       data_dir=data_dir)
     train_global_dl = DataLoader(global_train_dataset, batch_size=batch_size,
                                  collate_fn=global_train_dataset.collate, shuffle=False)
 
     # Load test global dataset
-    global_test_dataset = PDEDataset2(dataset="heat_problem_example_global_data",
-                                     dataset_split="test", data_dir=data_dir)
+    global_test_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
+                                      data_dir=data_dir)
     test_global_dl = DataLoader(global_test_dataset, batch_size=batch_size,
                                 collate_fn=global_train_dataset.collate, shuffle=False)
 

@@ -61,7 +61,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
             subset_dl = DataLoader(subset, batch_size=batch_size, shuffle=False)
 
             # Do a forward pass on all points in the data subset and accumulate loss
-            loss = calculate_global_loss(subset, model)
+            loss = calculate_global_loss(subset, train_global_dl, model)
 
             # Total loss
             total_loss += loss.item()

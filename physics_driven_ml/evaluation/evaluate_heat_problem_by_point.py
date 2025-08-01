@@ -37,6 +37,9 @@ def evaluate_by_point(model, dataloader, disable_tqdm=False):
             network_f = model(inputs)
             # Error at one point
             total_error += eval_error(network_f, f_exact)
+            # for checking
+            print("new point:")
+            print("network's prediction for f:", network_f.item(), "true f:", f_exact.item())
 
         if step_num == eval_steps - 1:
             break
@@ -57,12 +60,12 @@ if __name__ == "__main__":
     logger = get_logger("Evaluation")
 
     data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/")
-    dataset = "heat_problem_validation_data"
+    dataset = "heat_problem_global_validation_data"
     batch_size = 1
     device = "cpu"
     evaluation_metric = "L2"
     model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_by_point/"
-    model_version = "heat_problem_by_point_epoch-6-error_0.00000"
+    model_version = "heat_problem_by_point_epoch-10-error_0.00000"
 
     # Load dataset
     dataset_dir = os.path.join(data_dir, "datasets", dataset)

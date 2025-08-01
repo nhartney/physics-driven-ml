@@ -12,18 +12,21 @@ from tqdm.auto import tqdm
 
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.utils import ModelConfig, get_logger
-from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2
+from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
 
 from physics_driven_ml.training.train_heat_problem_globally import sub_sample_point_data, calculate_global_loss
 
+from firedrake.output import VTKFile
 
-def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
+
+def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False, write_out_results=True):
     """
     Evaluate the model on a given dataset.
     Compute the L2 error of the NN for every sample in the evaluation set, and then
     add these errors up to give an overall error for that model. (The 'sample' in the
     evaluation set is a global example, made up of all points in the domain.)
     """
+
     batch_size = 1
 
     model.eval()
@@ -44,7 +47,20 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
 
         # Do a forward pass on all points in the data subset and accumulate loss
         with torch.no_grad():
-            loss = calculate_global_loss(subset, model)
+            if write_out_results:
+                # get network prediction for f as a Firedrake function
+                loss, f_func = calculate_global_loss(subset, global_dl, model, output_loss_fn=True)
+                # get target as a function from the global dataloader
+                batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
+                target_f = batch.target_fd[0]
+                # output both the prediction and the target to a vtu file
+                # access the label on the data for saving outputting
+                label = subset[-1][-1].item()
+                outfile = VTKFile(f'evaluation/evaluation_plots/test_plot_{label}.pvd')
+                outfile.write(target_f, f_func)
+            else:
+                loss = calculate_global_loss(subset, global_dl, model, output_loss_fn=False)
+    
             total_error += loss
 
         if step_num == eval_steps - 1:
@@ -54,6 +70,22 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False):
     L2_error = total_error**0.5
     L2_error /= eval_steps
     return L2_error
+
+
+# def write_out_results(subset_dl, model):
+#     # Output Firedrake function from the network's prediction for f and the target f function for
+#     # visual comparison
+#     for step_num, batch in enumerate(subset_dl):
+#         # extract inputs and target from the tensor
+#         inputs = batch[:, 1:5]
+#         target_f = batch[:,0]
+#         # forward pass
+#         network_point_f = model(inputs)[:,0]
+#         # compute L2 loss at the point
+#         loss = l2_loss(network_point_f, target_f)
+#         # add point loss to total loss list
+#         loss_list.append(loss)
+
 
 if __name__ == "__main__":
 

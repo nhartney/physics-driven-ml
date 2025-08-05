@@ -12,6 +12,8 @@ from sklearn.model_selection import train_test_split
 
 from physics_driven_ml.utils import get_logger
 
+import matplotlib.pyplot as plt
+
 def advance_one_timestep(u_in, mesh, V, bcs, time):
     k = Constant(1.)
     dt = Constant(0.1)
@@ -43,7 +45,7 @@ def solve_with_IC(mesh, ntimesteps, dt, IC):
         t = n*dt
         u = advance_one_timestep(u_in, mesh=mesh, V=V, bcs=bcs, time=t)
          # Compute f from the u solution (this is the network's target)
-        f = Function(V).interpolate(u*t*sin(pi*x)*sin(pi*y))
+        f = Function(V).interpolate(u*sin(pi*t)*sin(pi*x)*sin(pi*y))
         stepped_sln.append([f, u, t])
         u_in = u
 
@@ -78,6 +80,10 @@ if __name__ == "__main__":
     global_data_list = []
     initial_conditions = generate_initial_conditions(mesh, 5)
 
+    # for experimenting with log scaling the data
+    f_values = []
+    log_f_values = []
+
     for IC in initial_conditions:
         sln = solve_with_IC(mesh=mesh, ntimesteps=10, dt=dt, IC=IC)
         # extract f and u at (x,y) points from (f,u,t) solutions
@@ -88,8 +94,13 @@ if __name__ == "__main__":
             for i, j in mesh.coordinates.dat.data:
                 f_eval = f.at(i,j)
                 u_eval = u.at(i,j)
-                # concatenate list of (f,u,t,x,y) solutions
-                point_data_list.append((f_eval, u_eval, t, i, j))
+                log_f = -1/(np.log(f_eval + 1e-10) + 1e-10)
+                log_u = -1/(np.log(u_eval + 1e-10) + 1e-10)
+                # concatenate list of (scaled f, scaled u, t, x, y) solutions
+                point_data_list.append((log_f, log_u, t, i, j))
+                # for plotting
+                f_values.append(f_eval)
+                log_f_values.append(log_f)
             # concatenate global data as a list of (f,u,t) functions
             global_data_list.append((s[0], s[1], t))
 
@@ -107,5 +118,19 @@ if __name__ == "__main__":
     np.save(os.path.join(dataset_dir, 'numpy_point_train_data'), train_pointwise)
     np.save(os.path.join(dataset_dir, 'numpy_point_test_data'), test_pointwise)
 
-    # Save global f (Firedrake function) using checkpointing
-    # Need to follow the same train/test split as the point data
+    # plot to see what data looks like
+    # first plot raw f values
+    plt.plot(f_values)
+    plt.show()
+
+    # next plot log-scaled f values
+    plt.plot(log_f_values)
+    plt.show()
+
+    # no plot normalised log-scaled f values
+    log_f_max = np.asarray(log_f_values).max()
+    log_f_min = np.asarray(log_f_values).min()
+    log_f_values -= log_f_min
+    log_f_values /= log_f_max
+    plt.plot(log_f_values)
+    plt.show()

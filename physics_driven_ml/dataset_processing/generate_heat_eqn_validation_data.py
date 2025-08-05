@@ -38,8 +38,10 @@ for IC in initial_conditions:
         for i, j in mesh.coordinates.dat.data:
             f_eval = f.at(i,j)
             u_eval = u.at(i,j)
-            # concatenate list of (f,u,t,x,y) solutions
-            point_data_list.append((f_eval, u_eval, t, i, j, label))
+            log_f = -1/(np.log(f_eval + 1e-10) + 1e-10)
+            log_u = -1/(np.log(u_eval + 1e-10) + 1e-10)
+            # concatenate list of (scaled f, scaled u, t, x, y) solutions
+            point_data_list.append((log_f, log_u, t, i, j, label))
         global_data_list.append((f, label))
 
 # Save the point data as numpy array

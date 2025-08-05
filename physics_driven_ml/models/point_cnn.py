@@ -18,8 +18,7 @@ class PointNN(Module):
                                     ReLU(True),
                                     Linear(64, 32),
                                     ReLU(True),
-                                    Linear(32, 1),
-                                    Tanh())
+                                    Linear(32, 1))
         
 
     def forward(self, input_tensor):

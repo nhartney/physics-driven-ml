@@ -65,7 +65,7 @@ if __name__ == "__main__":
     device = "cpu"
     evaluation_metric = "L2"
     model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_by_point/"
-    model_version = "heat_problem_by_point_epoch-10-error_0.00000"
+    model_version = "heat_problem_by_point_epoch-19-error_0.00039"
 
     # Load dataset
     dataset_dir = os.path.join(data_dir, "datasets", dataset)

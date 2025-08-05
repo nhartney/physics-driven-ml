@@ -41,12 +41,26 @@ def train(model, device, train_dl, dev_dl):
 
         total_loss = 0.0
         train_steps = len(train_dl)
+
+        # normalise data in the dataloader
+        # min, max = get_min_max(train_dl)
+        # min_f = min[0]
+        # max_f = max[0]
+        # print("f min:", min_f)
+        # print("f max:", max_f)
+
         for step_num, batch in tqdm(enumerate(train_dl), total=train_steps):
             model.zero_grad()
 
             # separate input and target f out of the data tensor
             inputs = batch[:, 1:5]
             target_f = batch[:,0]
+
+            # normalise the inputs and target
+            # print("f before normalisation:", inputs[:,0].item())
+            # inputs[:,0] -= min_f
+            # inputs[:,0] /= min_f
+            # print("f after normalisation:", inputs[:,0].item())
 
             # forward pass
             network_f = model(inputs)[:,0]
@@ -84,6 +98,16 @@ def train(model, device, train_dl, dev_dl):
             torch.save(model_to_save.state_dict(), os.path.join(model_dir, "model.pt"))
 
     return model
+
+
+def get_min_max(loader):
+    # get the tensor out of the loader
+    all_data_tensor = torch.tensor(())
+    for data in loader:
+        all_data_tensor = torch.cat((all_data_tensor, data), 0)
+    mins = torch.min(all_data_tensor, 0)
+    maxs = torch.max(all_data_tensor, 0)
+    return mins.values, maxs.values
 
 
 if __name__ == "__main__":

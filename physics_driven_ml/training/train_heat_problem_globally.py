@@ -222,7 +222,7 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
     returns a list of network predictions at each point, which can then be interpolated to a Firedrake
     function for a global network estimate of f.
     """
-    # print("in calculate_global_loss, calculating global loss on a new subset")
+
     batch_size = 1
     l2_loss = torch.nn.MSELoss()
     loss_list = []
@@ -234,12 +234,7 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
         # extract inputs and target from the tensor
         inputs = batch[:, 1:5]
         target_f = batch[:,0]
-        # print("before the forward pass in calculating global loss, these are the inputs:", inputs)
-        # print("before the forward pass in calculating global loss, this is the target:", target_f)
-        # print("this is the u input and f target:", inputs[:,0].item(), target_f.item())
-        # just for debugging purposes
-        # label = batch[:, 5]
-        # print("before the forward pass in calculating global loss, this is the label:", label)
+
         # forward pass
         network_point_f = model(inputs)[:,0]
 

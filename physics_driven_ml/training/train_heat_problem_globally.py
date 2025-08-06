@@ -222,7 +222,7 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
     returns a list of network predictions at each point, which can then be interpolated to a Firedrake
     function for a global network estimate of f.
     """
-    print("caculating global loss on a new subset")
+    # print("in calculate_global_loss, calculating global loss on a new subset")
     batch_size = 1
     l2_loss = torch.nn.MSELoss()
     loss_list = []
@@ -234,21 +234,32 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
         # extract inputs and target from the tensor
         inputs = batch[:, 1:5]
         target_f = batch[:,0]
+        # print("before the forward pass in calculating global loss, these are the inputs:", inputs)
+        # print("before the forward pass in calculating global loss, this is the target:", target_f)
+        # print("this is the u input and f target:", inputs[:,0].item(), target_f.item())
+        # just for debugging purposes
+        # label = batch[:, 5]
+        # print("before the forward pass in calculating global loss, this is the label:", label)
         # forward pass
         network_point_f = model(inputs)[:,0]
+
         if output_loss_fn:
+            # for plotting purposes
             network_point_f_value = network_point_f.item()
-            # add value to list
             f_list.append(network_point_f_value)
+
+        # for debugging
+        print("prediction, target:", network_point_f.item(), target_f.item())
+        
         # compute L2 loss at the point
         loss = l2_loss(network_point_f, target_f)
         # add point loss to total loss list
         loss_list.append(loss)
     # sum together all point losses in the list
     global_loss = sum(loss_list)
+
     if output_loss_fn:
-        # network_f = np.asarray(f_list)
-        print("this is the f_list for this sample:", f_list)
+        # print("in calculate global loss, this is the network's point f predictions for this global sample:", f_list)
         f_func = interpolate_to_firedrake_function(train_global_dl, point_train_dl, f_list)
         return global_loss, f_func
     else:

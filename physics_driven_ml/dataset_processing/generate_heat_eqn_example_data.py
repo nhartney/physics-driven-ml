@@ -94,8 +94,9 @@ if __name__ == "__main__":
             for i, j in mesh.coordinates.dat.data:
                 f_eval = f.at(i,j)
                 u_eval = u.at(i,j)
-                log_f = -1/(np.log(f_eval + 1e-10) + 1e-10)
-                log_u = -1/(np.log(u_eval + 1e-10) + 1e-10)
+                log_f = -10/(np.log(f_eval + 1e-10) - 1e-10)
+                log_u = -10/(np.log(u_eval + 1e-10) - 1e-10)
+                print("f and u going to be saved:", log_f, log_u)
                 # concatenate list of (scaled f, scaled u, t, x, y) solutions
                 point_data_list.append((log_f, log_u, t, i, j))
                 # for plotting
@@ -127,7 +128,7 @@ if __name__ == "__main__":
     plt.plot(log_f_values)
     plt.show()
 
-    # no plot normalised log-scaled f values
+    # now plot normalised log-scaled f values (we aren't training with this currently)
     log_f_max = np.asarray(log_f_values).max()
     log_f_min = np.asarray(log_f_values).min()
     log_f_values -= log_f_min

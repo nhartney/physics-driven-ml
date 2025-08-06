@@ -6,7 +6,7 @@ method.
 
 import os
 import numpy as np
-from firedrake import RectangleMesh, CheckpointFile
+from firedrake import RectangleMesh, CheckpointFile, Constant
 from generate_heat_eqn_example_data import generate_initial_conditions, solve_with_IC
 
 
@@ -70,12 +70,19 @@ for IC in initial_conditions:
         f = s[0]
         u = s[1]
         t = s[2]
+        # scale f function
+        print("min, max of f before scaling:", f.dat.data.min(), f.dat.data.max())
+        f.dat.data[:] = -10/(np.log(f.dat.data[:] + 1e-10) - 1e-10)
+        print("min, max of f after scaling:", f.dat.data.min(), f.dat.data.max())
+        # f.dat.data[:] = np.exp((-10/f.dat.data[:]) + 1e-10) - 1e-10
+        # print("min, max of f after undoing scaling:", f.dat.data.min(), f.dat.data.max())
         label +=1
         for i, j in mesh.coordinates.dat.data:
             u_eval = u.at(i,j)
+            log_u = -1/(np.log(u_eval + 1e-10) + 1e-10)
+            f_eval = f.at(i,j)
             # concatenate list of (u,t,x,y, label) solutions
-            point_data_list.append((u_eval, t, i, j, label))
-            # print("these are the labels attached to the point data:", label)
+            point_data_list.append((f_eval, log_u, t, i, j, label))
         global_data_list.append((f, label))
 
 point_train, point_test, global_train, global_test = train_test_split(point_data_list, global_data_list, 0.8)

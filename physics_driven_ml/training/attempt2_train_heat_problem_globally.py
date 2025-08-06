@@ -75,7 +75,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
         logger.info(f"Total loss: {total_loss/train_steps}")
 
         # Evaluate this version of the model on the test set
-        error = evaluate_globally_by_point(model, test_point_dl, test_global_dl)
+        error = evaluate_globally_by_point(model, device, test_point_dl, test_global_dl, write_out_results=False)
         logger.info(f"L2 error from this model, evaluated on the test set: {error}")
 
         # Save best-performing model
@@ -127,7 +127,7 @@ if __name__ == "__main__":
                                  collate_fn=global_train_dataset.collate, shuffle=False)
 
     # Load test global dataset
-    global_test_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
+    global_test_dataset = PDEDataset2(dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
                                       data_dir=data_dir)
     test_global_dl = DataLoader(global_test_dataset, batch_size=batch_size,
                                 collate_fn=global_train_dataset.collate, shuffle=False)

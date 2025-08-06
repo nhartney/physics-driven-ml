@@ -18,8 +18,11 @@ from physics_driven_ml.training.train_heat_problem_globally import sub_sample_po
 
 from firedrake.output import VTKFile
 
+# from firedrake import exp
+import numpy as np
 
-def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False, write_out_results=True):
+
+def evaluate_globally_by_point(model, device, point_dl, global_dl, disable_tqdm=False, write_out_results=True):
     """
     Evaluate the model on a given dataset.
     Compute the L2 error of the NN for every sample in the evaluation set, and then
@@ -28,6 +31,7 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False, w
     """
 
     batch_size = 1
+    device = device
 
     model.eval()
 
@@ -53,9 +57,16 @@ def evaluate_globally_by_point(model, point_dl, global_dl, disable_tqdm=False, w
                 # get target as a function from the global dataloader
                 batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
                 target_f = batch.target_fd[0]
+
                 # output both the prediction and the target to a vtu file
                 # access the label on the data for saving outputting
                 label = subset[-1][-1].item()
+
+                # next undo the transform on the target and the network's output
+                # recovered_f = exp((-10/f) + 1e-10) - 1e-10
+                # f_func.dat.data[:] = np.exp((-10/f_func.dat.data[:]) + 1e-10) - 1e-10
+                # target_f.dat.data[:] = np.exp((-10/target_f.dat.data[:]) + 1e-10) - 1e-10
+
                 outfile = VTKFile(f'evaluation/evaluation_plots/test_plot_{label}.pvd')
                 outfile.write(target_f, f_func)
             else:
@@ -97,7 +108,7 @@ if __name__ == "__main__":
     device = "cpu"
     evaluation_metric = "L2"
     model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models/heat_problem_globally/"
-    model_version = "heat_problem_globally_epoch-18-error_0.00494"
+    model_version = "heat_problem_globally_epoch-19-error_0.12404"
 
     # Load dataset
     dataset_dir = os.path.join(data_dir, "datasets", dataset)
@@ -127,5 +138,5 @@ if __name__ == "__main__":
     model.to(device)
 
     # Evaluate model
-    error = evaluate_globally_by_point(model, point_dataloader, global_dataloader)
+    error = evaluate_globally_by_point(model, device, point_dataloader, global_dataloader)
     logger.info(f"\n\t Error (metric: {evaluation_metric}): {error:.4e}")

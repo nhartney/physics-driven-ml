@@ -44,6 +44,10 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
     u = Function(V)
     dyn_out = Function(V)
 
+    # Extract mesh and function space from the global dataloader
+    mesh = train_global_dl.dataset.mesh
+    fs = train_global_dl.dataset.fs
+
     # Training loop
     for epoch_num in trange(epochs):
         logger.info(f"Epoch num: {epoch_num}")
@@ -85,7 +89,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
                 # Interpolate this to a Firedrake function
                 point_dl = DataLoader(nn_in, batch_size=batch_size,
                                       shuffle=False)
-                nn_out = interpolate_to_firedrake_function(train_global_dl,
+                nn_out = interpolate_to_firedrake_function(mesh, fs,
                                                            point_dl,
                                                            nn_out)
 
@@ -138,8 +142,7 @@ def forward_pass_by_point(point_train_data_subset, model, batch_size):
     return np.asarray(network_out)
 
 
-def create_VOM(train_global_dl, subset_dl):
-    mesh = train_global_dl.dataset.mesh
+def create_VOM(mesh, subset_dl):
     coordinates = []
     for data_sample in subset_dl:
         x_locs = data_sample[:, 1].item()
@@ -149,9 +152,10 @@ def create_VOM(train_global_dl, subset_dl):
     return vom
 
 
-def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
+def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, subset_dl, network_f):
 
-    vom = create_VOM(train_global_dl, subset_dl)
+    mesh = global_dl_mesh
+    vom = create_VOM(mesh, subset_dl)
 
     # start with a VOM that is structured like the data
     P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
@@ -165,7 +169,7 @@ def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
 
     # interpolate from this VOM to the parent mesh (global data mesh)
     # find the function space that the global target function is on
-    Vsrc = train_global_dl.dataset.fs
+    Vsrc = global_dl_fs
 
     I = Interpolator(TestFunction(Vsrc), P0DG)
     f_star = field_vom.riesz_representation(riesz_map="l2")

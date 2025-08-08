@@ -25,12 +25,14 @@ from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sam
 
 
 def train(model, pde_model, device, train_point_dl, train_global_dl,
-          test_point_dl, test_global_dl, max_rollout_steps=2, ndt=1):
+          test_point_dl, test_global_dl, batch_size, H, num_epochs,
+          logger,
+          max_rollout_steps=2, ndt=1):
     """
     Train the model on a given dataset.
     """
     learning_rate = 5e-5
-    epochs = 4
+    epochs = num_epochs
     device = device
 
     optimiser = optim.AdamW(model.parameters(), lr=learning_rate, eps=1e-8)
@@ -79,7 +81,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
                 # initial condition
                 # Do a forward pass on all points in the
                 # data subset
-                nn_out = forward_pass_by_point(nn_in, model)
+                nn_out = forward_pass_by_point(nn_in, model, batch_size)
                 # Interpolate this to a Firedrake function
                 point_dl = DataLoader(nn_in, batch_size=batch_size,
                                       shuffle=False)
@@ -113,7 +115,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
         logger.info(f"Total loss: {total_loss/train_steps}")
 
 
-def forward_pass_by_point(point_train_data_subset, model):
+def forward_pass_by_point(point_train_data_subset, model, batch_size):
     """
     This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
     up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
@@ -272,4 +274,6 @@ if __name__ == "__main__":
           train_point_dl=train_point_dl,
           train_global_dl=train_global_dl,
           test_point_dl=test_point_dl,
-          test_global_dl=test_global_dl)
+          test_global_dl=test_global_dl,
+          batch_size=batch_size, H=H,
+          num_epochs=4, logger=logger)

@@ -3,7 +3,9 @@ import os
 from os.path import abspath, dirname
 
 from firedrake import (Function, SpatialCoordinate, exp, VertexOnlyMesh,
-                       assemble, interpolate, FunctionSpace)
+                       assemble, FunctionSpace)
+
+from firedrake.__future__ import interpolate
 
 from firedrake.output import VTKFile
 
@@ -55,7 +57,7 @@ def create_data(global_dl):
     # Make a Gaussian function on the mesh -
     # this is the function we want to recover at the end
     x, y = SpatialCoordinate(mesh)
-    V = Function(fs, name="orig_func").interpolate(exp(-x**2-y**2))
+    V = Function(fs, name="orig_func").interpolate(exp(-(x-0.5)**2-(y-0.5)**2))
     # extract the data from V and write it to a list
     coords = mesh.coordinates.dat.data
     vom = VertexOnlyMesh(mesh, coords)
@@ -73,7 +75,7 @@ def create_data(global_dl):
 def check_interpolate_to_firedrake_function():
     # here we need both the subset_dl (to pass to the method we want
     # to test) and the dataloader from the full point data (to pass
-    # to create_data because it needs to it extract function space
+    # to create_data because it needs it to extract function space
     # and mesh from)
     global_dl, subset_dl = load_data()
     orig_func, data_list, mesh, fs = create_data(global_dl)
@@ -85,5 +87,5 @@ def check_interpolate_to_firedrake_function():
 
 
 orig_func, new_func = check_interpolate_to_firedrake_function()
-outfile = VTKFile("checking_vom_outfile")
+outfile = VTKFile("checking_vom_outfile.pvd")
 outfile.write(orig_func, new_func)

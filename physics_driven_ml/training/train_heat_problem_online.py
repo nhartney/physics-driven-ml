@@ -85,13 +85,11 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
                 # initial condition
                 # Do a forward pass on all points in the
                 # data subset
-                nn_out = forward_pass_by_point(nn_in, model, batch_size)
+                nn_out, ordered_coords = forward_pass_by_point(nn_in, model, batch_size)
                 # Interpolate this to a Firedrake function
-                point_dl = DataLoader(nn_in, batch_size=batch_size,
-                                      shuffle=False)
                 nn_out = interpolate_to_firedrake_function(mesh, fs,
-                                                           point_dl,
-                                                           nn_out)
+                                                           nn_out,
+                                                           ordered_coords)
 
                 # Add the network's prediction to the dynamics solution
                 # This is the input for the next dynamics step
@@ -127,6 +125,7 @@ def forward_pass_by_point(point_train_data_subset, model, batch_size):
     function for a global network estimate of f.
     """
     network_out = []
+    ordered_coords = []
     point_train_dl = DataLoader(point_train_data_subset,
                                 batch_size=batch_size, shuffle=False)
     for step_num, batch in enumerate(point_train_dl):
@@ -139,30 +138,25 @@ def forward_pass_by_point(point_train_data_subset, model, batch_size):
         network_point_f_value = network_point_f.item()
         # add value to list
         network_out.append(network_point_f_value)
-    return np.asarray(network_out)
+        # add coordinate to coordinate list (same ordering as data list)
+        x = batch[:, 1].item()
+        y = batch[:, 2].item()
+        ordered_coords.append((x,y))
+    return np.asarray(network_out), ordered_coords
 
 
-def create_VOM(mesh, subset_dl):
-    coordinates = []
-    for data_sample in subset_dl:
-        x_locs = data_sample[:, 1].item()
-        y_locs = data_sample[:, 2].item()
-        coordinates.append((x_locs, y_locs))
-    vom = VertexOnlyMesh(mesh, coordinates, redundant=False)
-    return vom
-
-
-def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, subset_dl, network_f):
+def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, network_f, coordinates_list):
 
     mesh = global_dl_mesh
-    vom = create_VOM(mesh, subset_dl)
+    # create vertex-only mesh with the same input ordering as the coordinates
+    vom = VertexOnlyMesh(mesh, coordinates_list, redundant=False)
 
-    # start with a VOM that is structured like the data
+    # start with a function space that is structured like the data
     P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
     field_vomio = Function(P0DG_io)
     field_vomio.dat.data_wo[:] = network_f
 
-    # Next interpolate onto the vertex only mesh that does not have
+    # Next interpolate onto the function space that does not have
     # the input ordering
     P0DG = FunctionSpace(vom, "DG", 0)
     field_vom = assemble(interpolate(field_vomio, P0DG))

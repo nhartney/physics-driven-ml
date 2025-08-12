@@ -41,23 +41,35 @@ def load_data():
 def create_data(global_dl):
     fs = global_dl.dataset.fs
     mesh = global_dl.dataset.mesh
+
     # Make a Gaussian function on the mesh -
     # this is the function we want to recover at the end
     x, y = SpatialCoordinate(mesh)
     V = Function(fs, name="orig_func").interpolate(exp(-(x-0.5)**2-(y-0.5)**2))
-    # extract the data from V and write it to a list
-    # first get the coordinates in the same order as the data list
-    # loop over the mesh??
-    coordinate_list = []
+
+    # We now need to get the point values of V and a list of the
+    # coordinates of the points in the same order
+
+    # First get the coordinates of the mesh
     coords = mesh.coordinates.dat.data
-    for (x,y) in coords:
-        coordinate_list.append((x,y))
-    vom = VertexOnlyMesh(mesh, coordinate_list)
+
+    # Create a VOM with these coordinates
+    vom = VertexOnlyMesh(mesh, coords)
+
+    # Create a point valued function space on the VOM and interpolate V to it
     P0DG = FunctionSpace(vom, "DG", 0)
-    # Interpolation performs point evaluation
-    V_at_points = assemble(interpolate(V, P0DG))
+    V_at_points_ = assemble(interpolate(V, P0DG))
+
+    # Create point valued function space on the VOM that has the same
+    # ordering as the coordinates and interpolate the point values V to it
+    P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
+    V_at_points = assemble(interpolate(V_at_points_, P0DG_io))
+
+    # We now have the values of V in the same order as the coordinates
+    # specified above
     V_data_list = V_at_points.dat.data_ro
-    return V, V_data_list, coordinate_list, mesh, fs
+
+    return V, V_data_list, coords, mesh, fs
 
 
 def check_interpolate_to_firedrake_function():

@@ -7,12 +7,9 @@ from firedrake import (Function, SpatialCoordinate, exp, VertexOnlyMesh,
 
 from firedrake.__future__ import interpolate
 
-from firedrake.output import VTKFile
-
 from torch.utils.data import DataLoader
-from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2
+from physics_driven_ml.dataset_processing import PDEDataset2
 from physics_driven_ml.training import interpolate_to_firedrake_function
-from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sample_point_data
 
 # Start with a function and extract the data from it. This is our fake
 # network output that we want to interpolate to a Firedrake function.
@@ -72,10 +69,9 @@ def create_data(global_dl):
 def test_interpolate_to_firedrake_function():
     # pass global_dl to create_data because it needs it to extract the function
     # space and mesh from
-    global_dl= load_data()
+    global_dl = load_data()
     orig_func, data_list, coordinate_list, mesh, fs = create_data(global_dl)
     new_func = interpolate_to_firedrake_function(mesh, fs, data_list, coordinate_list)
     # check how new_func compares to orig_func using Firedrake error norm
     diff = errornorm(orig_func, new_func)
     assert diff < 1e-12
-

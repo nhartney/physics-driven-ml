@@ -3,7 +3,7 @@ import os
 from os.path import abspath, dirname
 
 from firedrake import (Function, SpatialCoordinate, exp, VertexOnlyMesh,
-                       assemble, FunctionSpace)
+                       assemble, FunctionSpace, errornorm)
 
 from firedrake.__future__ import interpolate
 
@@ -17,9 +17,6 @@ from physics_driven_ml.dataset_processing.heat_problem_data_tools import sub_sam
 # Start with a function and extract the data from it. This is our fake
 # network output that we want to interpolate to a Firedrake function.
 # The test checks if the Firedrake output matches what we started with.
-
-# Create a mesh, a FunctionSpace and a Function with some data in it
-# Create the VOM from the point data dataloader
 
 
 def load_data():
@@ -72,18 +69,13 @@ def create_data(global_dl):
     return V, V_data_list, coords, mesh, fs
 
 
-def check_interpolate_to_firedrake_function():
-    # pass global_dl to create_data because it needs it to extract function space
-    # and mesh from
+def test_interpolate_to_firedrake_function():
+    # pass global_dl to create_data because it needs it to extract the function
+    # space and mesh from
     global_dl= load_data()
     orig_func, data_list, coordinate_list, mesh, fs = create_data(global_dl)
     new_func = interpolate_to_firedrake_function(mesh, fs, data_list, coordinate_list)
-    # check how new_func compares to orig_func
-    # do this with a Firedrake norm
-    # first check what they look like
-    return orig_func, new_func
+    # check how new_func compares to orig_func using Firedrake error norm
+    diff = errornorm(orig_func, new_func)
+    assert diff < 1e-12
 
-
-orig_func, new_func = check_interpolate_to_firedrake_function()
-outfile = VTKFile("checking_vom_outfile.pvd")
-outfile.write(orig_func, new_func)

@@ -16,7 +16,20 @@ from torch.utils.data import Dataset, Subset, DataLoader
 from collections import defaultdict
 
 
-class BatchElement2(NamedTuple):
+class BatchElementOffline(NamedTuple):
+    """Batch element for PDE-based datasets as a tuple of PyTorch and Firedrake tensors."""
+    f_target: Tensor
+    f_target_fd: Function
+
+
+class BatchedElementOffline(NamedTuple):
+    """Represent tensors for a list/batch of `BatchElement` that have been collated."""
+    f_target: Tensor
+    f_target_fd: List[Function]
+    batch_elements: Optional[List[BatchElementOffline]] = None
+
+
+class BatchElementOnline(NamedTuple):
     """Batch element for PDE-based datasets as a tuple of PyTorch and Firedrake tensors."""
     u0: Tensor
     u_target: Tensor
@@ -24,13 +37,13 @@ class BatchElement2(NamedTuple):
     u_target_fd: Function
 
 
-class BatchedElement2(NamedTuple):
+class BatchedElementOnline(NamedTuple):
     """Represent tensors for a list/batch of `BatchElement` that have been collated."""
     u0: Tensor  # shape = (batch_size, m)
     u_target: Tensor
     u0_fd: List[Function]
     u_target_fd: List[Function]
-    batch_elements: Optional[List[BatchElement2]] = None
+    batch_elements: Optional[List[BatchElementOnline]] = None
 
 
 class PointDataset(Dataset):
@@ -60,7 +73,64 @@ class PointDataset(Dataset):
         return tensor_sample
 
 
-class PDEDataset2(Dataset):
+class PDEDatasetOffline(Dataset):
+    """
+    Dataset reader for PDE-based datasets generated from the global heat example problem.
+    """
+
+    def __init__(self, dataset, data_dir):
+        # Check dataset directory
+        data = os.path.join(data_dir, dataset)
+        if not os.path.exists(data):
+            raise ValueError(f"Dataset directory {os.path.abspath(data)} does not exist")
+
+        # Get mesh and batch elements (Firedrake functions)
+        mesh, batch_elements = self.load_dataset(data)
+        self.mesh = mesh
+        self.batch_elements_fd = batch_elements
+        self.fs = self.batch_elements_fd[0].function_space()
+
+    def load_dataset(self, fname):
+        data = []
+        # Load data
+        with CheckpointFile(fname, "r") as afile:
+            n = int(np.array(afile.h5pyfile["n"]))
+            # Load mesh
+            mesh = afile.load_mesh("mesh")
+            # Load data
+            for i in range(n):
+                target_f = afile.load_function(mesh, "target_f", idx=i)
+                data.append((target_f))
+        return mesh, data
+
+    def __len__(self):
+        return len(self.batch_elements_fd)
+
+    def __getitem__(self, idx):
+        f_target_fd = self.batch_elements_fd[idx]
+        # Convert Firedrake functions to PyTorch tensors
+        f_target = to_torch(f_target_fd)
+        return BatchElementOffline(f_target=f_target,
+                                   f_target_fd=f_target_fd)
+
+    def collate(self, batch_elements):
+        # Workaround to enable custom data types (e.g. firedrake.Function) in PyTorch dataloaders
+        # See: https://pytorch.org/docs/stable/data.html#working-with-collate-fn
+        batch_size = len(batch_elements)
+        m = max(e.f_target.size(-1) for e in batch_elements)
+
+        f_target = torch.zeros(batch_size, m, dtype=batch_elements[0].f_target.dtype)
+        f_target_fd = []
+        for i, e in enumerate(batch_elements):
+            f_target[i, :] = e.f_target
+            f_target_fd.append(e.f_target_fd)
+
+        return BatchedElementOffline(f_target=f_target,
+                                     f_target_fd=f_target_fd,
+                                     batch_elements=batch_elements)
+
+
+class PDEDatasetOnline(Dataset):
     """
     Dataset reader for PDE-based datasets generated from the global heat example problem.
     """
@@ -98,7 +168,7 @@ class PDEDataset2(Dataset):
         u0_fd, u_target_fd = self.batch_elements_fd[idx]
         # Convert Firedrake functions to PyTorch tensors
         u0, u_target = [to_torch(e) for e in [u0_fd, u_target_fd]]
-        return BatchElement2(u0=u0, u_target=u_target,
+        return BatchElementOnline(u0=u0, u_target=u_target,
                              u0_fd=u0_fd,
                              u_target_fd=u_target_fd)
 
@@ -119,7 +189,7 @@ class PDEDataset2(Dataset):
             u0_fd.append(e.u0_fd)
             u_target_fd.append(e.u_target_fd)
 
-        return BatchedElement2(u0=0, u_target=u_target,
+        return BatchedElementOnline(u0=0, u_target=u_target,
                                u0_fd=u0_fd, u_target_fd=u_target_fd,
                                batch_elements=batch_elements)
 
@@ -210,14 +280,3 @@ def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, network_f, c
 
     field = f_data_star.riesz_representation(riesz_map="l2")
     return field
-
-
-# Convert the output from the dynamics step to point data for the network
-def convert_to_points(u):
-    point_data_list = []
-    mesh = u.function_space().mesh()
-    for i, j in mesh.coordinates.dat.data:
-        point_u = u.at(i, j)
-        point_data_list.append((point_u, i, j))
-    point_dataset = PointDataset(numpy_data=point_data_list)
-    return point_dataset

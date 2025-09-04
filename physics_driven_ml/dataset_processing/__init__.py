@@ -1,4 +1,8 @@
 from physics_driven_ml.dataset_processing.data_types import BatchedElement, BatchElement     # noqa: F401
 from physics_driven_ml.dataset_processing.generate_data import random_field, generate_data   # noqa: F401
 from physics_driven_ml.dataset_processing.pde_dataset import PDEDataset                      # noqa: F401
-from physics_driven_ml.dataset_processing.heat_problem_data_tools import PDEDataset2, PointDataset, BatchedElement2  # noqa: F401
+from physics_driven_ml.dataset_processing.heat_problem_data_tools import (PDEDatasetOnline,
+                                                                          PDEDatasetOffline,
+                                                                          PointDataset,
+                                                                          BatchedElementOnline,
+                                                                          BatchedElementOffline)  # noqa: F401

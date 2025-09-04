@@ -8,7 +8,7 @@ from firedrake.ml.pytorch import fem_operator
 
 from physics_driven_ml.training.train_heat_problem_online import train
 from physics_driven_ml.models import PointNN
-from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2
+from physics_driven_ml.dataset_processing import PointDataset, PDEDatasetOnline
 from torch.utils.data import DataLoader
 from physics_driven_ml.forward_models import HeatEquation, GustoHeatEquationModel
 from physics_driven_ml.utils import get_logger
@@ -45,7 +45,7 @@ def model_setup():
     point_test_dl = DataLoader(point_test_dataset,
                                batch_size=batch_size, shuffle=False)
     # Global train
-    global_train_dataset = PDEDataset2(
+    global_train_dataset = PDEDatasetOnline(
         dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
         data_dir=data_dir)
     global_train_dl = DataLoader(global_train_dataset,
@@ -53,7 +53,7 @@ def model_setup():
                                  collate_fn=global_train_dataset.collate,
                                  shuffle=False)
     # Global test
-    global_test_dataset = PDEDataset2(
+    global_test_dataset = PDEDatasetOnline(
         dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
         data_dir=data_dir)
     global_test_dl = DataLoader(global_test_dataset,

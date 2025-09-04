@@ -13,7 +13,7 @@ from firedrake import *
 from firedrake_adjoint import *
 from firedrake.ml.pytorch import fem_operator, to_torch
 
-from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
+from physics_driven_ml.dataset_processing import PointDataset, PDEDatasetOnline, BatchedElementOnline
 from physics_driven_ml.models import PointNN
 from physics_driven_ml.forward_models import HeatEquation, GustoHeatEquationModel
 from physics_driven_ml.utils import get_logger
@@ -69,7 +69,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
             model.zero_grad()
 
             # get initial condition from data
-            global_batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
+            global_batch = BatchedElementOnline(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
             global_u0 = global_batch.u0_fd[0]
 
             # set initial values for dynamics and network
@@ -160,7 +160,7 @@ if __name__ == "__main__":
                                batch_size=batch_size, shuffle=False)
 
     # Global train
-    global_train_dataset = PDEDataset2(
+    global_train_dataset = PDEDatasetOnline(
         dataset=os.path.join(data_dir, data_file_name, "train_global_data.h5"),
         data_dir=data_dir)
     train_global_dl = DataLoader(global_train_dataset,
@@ -169,7 +169,7 @@ if __name__ == "__main__":
                                  shuffle=False)
 
     # Global test
-    global_test_dataset = PDEDataset2(
+    global_test_dataset = PDEDatasetOnline(
         dataset=os.path.join(data_dir, data_file_name, "test_global_data.h5"),
         data_dir=data_dir)
     test_global_dl = DataLoader(global_test_dataset,

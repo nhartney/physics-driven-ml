@@ -236,16 +236,22 @@ def forward_pass_by_point(point_train_data_subset, model, batch_size):
     for step_num, batch in enumerate(point_train_dl):
         # model.zero_grad()
         # extract inputs from the tensor
-        inputs = batch[:, 0:3]
+        inputs = batch[:, 1:5]
         # forward pass
         network_point_f = model(inputs)[:, 0]
         # extract value from the output tensor
         network_point_f_value = network_point_f.item()
+
+        # this is just for debugging
+        # print("this is the point value predicted by the network:", network_point_f_value)
+        # target_point_f = batch[:, 0]
+        # print("this is the target point f value:", target_point_f.item())
+
         # add value to list
         network_out.append(network_point_f_value)
         # add coordinate to coordinate list (same ordering as data list)
-        x = batch[:, 1].item()
-        y = batch[:, 2].item()
+        x = batch[:, 3].item()
+        y = batch[:, 4].item()
         ordered_coords.append((x, y))
     return np.asarray(network_out), ordered_coords
 

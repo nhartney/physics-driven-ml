@@ -1,4 +1,4 @@
-from torch.nn import Module, Sequential, Linear, ReLU, Tanh
+from torch.nn import Module, Sequential, Linear, ReLU, Tanh, Sigmoid
 
 
 class PointNN(Module):
@@ -11,7 +11,7 @@ class PointNN(Module):
     def __init__(self):
         super().__init__()
 
-        self.nn_encoder = Sequential(Linear(3, 32),
+        self.nn_encoder = Sequential(Linear(4, 32),
                                      ReLU(True),
                                      Linear(32, 64),
                                      ReLU(True),
@@ -23,7 +23,10 @@ class PointNN(Module):
                                      Linear(64, 32),
                                      ReLU(True),
                                      Linear(32, 1),
-                                     Tanh())
+                                    #  ReLU())
+                                    #  Tanh())
+                                     Sigmoid())
+
 
     def forward(self, input_tensor):
 

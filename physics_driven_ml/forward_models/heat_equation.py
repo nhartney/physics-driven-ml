@@ -64,7 +64,7 @@ class GustoHeatEquationModel(object):
         self.stepper = Timestepper(self.eqn, scheme, io,
                                    spatial_methods=diffusion_methods)
 
-    def evaluate(self):
+    def evaluate(self, x_in, dt):
         self.q.assign(self.stepper.fields("q"))
         self.t.assign(self.eqn.domain.t)
         assemble(self.source_interpolate)

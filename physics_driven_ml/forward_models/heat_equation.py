@@ -1,5 +1,6 @@
 from firedrake import (FunctionSpace, Constant, Function, TestFunction,
-                       DirichletBC, inner, grad, dx, solve)
+                       DirichletBC, inner, grad, dx, solve, SpatialCoordinate,
+                       sin, interpolate, pi, assemble)
 from gusto import *
 
 
@@ -43,22 +44,33 @@ class GustoHeatEquationModel(object):
                                   dump_diagnostics=False)
         io = IO(domain, output)
         params = DiffusionParameters(domain.mesh, kappa=1)
-        eqn = DiffusionEquation(domain, V, "f", params)
+        eqn = DiffusionEquation(domain, V, "u", params)
+
+        self.mesh = domain.mesh
 
         if create_training_data:
             # if we're creating the training data we need to add the forcing
-            f = Function(V)
-            eqn.residual -= physics_label(prognostic(eqn.test * f * dx, "f"))
+            self.f = Function(V)
+            self.u = Function(V)
+            t = 0.01  # fix this to take the current time
+            x, y = SpatialCoordinate(mesh)
+            self.f_interpolate = interpolate(self.u*sin(t)*sin(pi*x)*sin(pi*y), self.f)
+            eqn.residual -= physics_label(prognostic(eqn.test * self.f * dx, "u"),
+                                               self.evaluate)
 
         scheme = BackwardEuler(domain)
-        diffusion_methods = [CGDiffusion(eqn, "f", params)]
+        diffusion_methods = [CGDiffusion(eqn, "u", params)]
         self.stepper = Timestepper(eqn, scheme, io,
                                    spatial_methods=diffusion_methods)
 
-    def advance(self, u_out, u_in, ndt):
+    def evaluate(self):
+        self.u.assign(self.stepper.fields("u"))
+        # also maybe assign the current time from the timestepper here
+        assemble(self.f_interpolate)
 
-        u0 = self.stepper.fields("f")
+    def advance(self, u_out, u_in, ndt):
+        u0 = self.stepper.fields("u")
         u0.assign(u_in)
         tmax = float(self.stepper.dt * ndt)
         self.stepper.run(0, tmax)
-        u_out.assign(self.stepper.fields("f"))
+        u_out.assign(self.stepper.fields("u"))

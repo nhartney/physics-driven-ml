@@ -55,8 +55,9 @@ class GustoHeatEquationModel(object):
             t = 0.01  # fix this to take the current time
             x, y = SpatialCoordinate(mesh)
             self.f_interpolate = interpolate(self.u*sin(t)*sin(pi*x)*sin(pi*y), self.f)
-            eqn.residual -= physics_label(prognostic(eqn.test * self.f * dx, "u"),
-                                               self.evaluate)
+            label=PhysicsLabel("f_source_term")
+            eqn.residual -= source_label(label(prognostic(eqn.test * self.f * dx, "u"),
+                                               self.evaluate))
 
         scheme = BackwardEuler(domain)
         diffusion_methods = [CGDiffusion(eqn, "u", params)]

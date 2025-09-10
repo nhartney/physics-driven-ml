@@ -44,34 +44,32 @@ class GustoHeatEquationModel(object):
                                   dump_diagnostics=False)
         io = IO(domain, output)
         params = DiffusionParameters(domain.mesh, kappa=1)
-        eqn = DiffusionEquation(domain, V, "u", params)
-
-        self.mesh = domain.mesh
+        eqn = DiffusionEquation(domain, V, "q", params)
 
         if create_training_data:
             # if we're creating the training data we need to add the forcing
-            self.f = Function(V)
-            self.u = Function(V)
+            source = Function(V)
+            self.q = Function(V)
             t = 0.01  # fix this to take the current time
             x, y = SpatialCoordinate(mesh)
-            self.f_interpolate = interpolate(self.u*sin(t)*sin(pi*x)*sin(pi*y), self.f)
-            label=PhysicsLabel("f_source_term")
-            eqn.residual -= source_label(label(prognostic(eqn.test * self.f * dx, "u"),
+            self.source_interpolate = interpolate(self.q*sin(t)*sin(pi*x)*sin(pi*y), source)
+            label=PhysicsLabel("forcing_term")
+            eqn.residual -= source_label(label(prognostic(eqn.test * source * dx, "q"),
                                                self.evaluate))
 
         scheme = BackwardEuler(domain)
-        diffusion_methods = [CGDiffusion(eqn, "u", params)]
+        diffusion_methods = [CGDiffusion(eqn, "q", params)]
         self.stepper = Timestepper(eqn, scheme, io,
                                    spatial_methods=diffusion_methods)
 
     def evaluate(self):
-        self.u.assign(self.stepper.fields("u"))
+        self.q.assign(self.stepper.fields("q"))
         # also maybe assign the current time from the timestepper here
-        assemble(self.f_interpolate)
+        assemble(self.source_interpolate)
 
     def advance(self, u_out, u_in, ndt):
-        u0 = self.stepper.fields("u")
+        u0 = self.stepper.fields("q")
         u0.assign(u_in)
         tmax = float(self.stepper.dt * ndt)
         self.stepper.run(0, tmax)
-        u_out.assign(self.stepper.fields("u"))
+        u_out.assign(self.stepper.fields("q"))

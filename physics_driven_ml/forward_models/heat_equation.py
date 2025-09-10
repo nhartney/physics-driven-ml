@@ -44,27 +44,29 @@ class GustoHeatEquationModel(object):
                                   dump_diagnostics=False)
         io = IO(domain, output)
         params = DiffusionParameters(domain.mesh, kappa=1)
-        eqn = DiffusionEquation(domain, V, "q", params)
+        self.eqn = DiffusionEquation(domain, V, "q", params)
 
         if create_training_data:
             # if we're creating the training data we need to add the forcing
             source = Function(V)
             self.q = Function(V)
-            t = 0.01  # fix this to take the current time
+            # current time is a constant (needs to be on a space for adjoint?)
+            R = FunctionSpace(mesh, "R", 0)
+            self.t = Function(R)
             x, y = SpatialCoordinate(mesh)
-            self.source_interpolate = interpolate(self.q*sin(t)*sin(pi*x)*sin(pi*y), source)
+            self.source_interpolate = interpolate(self.q*sin(self.t)*sin(pi*x)*sin(pi*y), source)
             label=PhysicsLabel("forcing_term")
-            eqn.residual -= source_label(label(prognostic(eqn.test * source * dx, "q"),
+            self.eqn.residual -= source_label(label(prognostic(self.eqn.test * source * dx, "q"),
                                                self.evaluate))
 
         scheme = BackwardEuler(domain)
-        diffusion_methods = [CGDiffusion(eqn, "q", params)]
-        self.stepper = Timestepper(eqn, scheme, io,
+        diffusion_methods = [CGDiffusion(self.eqn, "q", params)]
+        self.stepper = Timestepper(self.eqn, scheme, io,
                                    spatial_methods=diffusion_methods)
 
     def evaluate(self):
         self.q.assign(self.stepper.fields("q"))
-        # also maybe assign the current time from the timestepper here
+        self.t.assign(self.eqn.domain.t)
         assemble(self.source_interpolate)
 
     def advance(self, u_out, u_in, ndt):

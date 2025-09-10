@@ -5,4 +5,6 @@ from physics_driven_ml.dataset_processing.heat_problem_data_tools import (PDEDat
                                                                           PDEDatasetOffline,
                                                                           PointDataset,
                                                                           BatchedElementOnline,
-                                                                          BatchedElementOffline)  # noqa: F401
+                                                                          BatchedElementOffline,
+                                                                          generate_initial_conditions,
+                                                                          train_test_split)  # noqa: F401

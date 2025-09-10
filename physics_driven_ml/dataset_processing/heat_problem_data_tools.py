@@ -1,9 +1,13 @@
 """
-The classes and methods needed for online training of the global heat problem example.
+The classes and methods needed for offline and online training of the global heat problem
+example.
 """
 
 import os
 import numpy as np
+
+from numpy import random
+
 import torch
 
 from typing import NamedTuple, List, Optional
@@ -286,3 +290,53 @@ def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, network_f, c
 
     field = f_data_star.riesz_representation(riesz_map="l2")
     return field
+
+
+def generate_initial_conditions(mesh, n):
+    ICs_list = []
+    x, y = SpatialCoordinate(mesh)
+    # Produce n random samples for initial conditions
+    for r in range(n):
+        x_pos = random.rand()
+        y_pos = random.rand()
+        a = 1 + random.rand()
+        IC = a*exp(-((x-x_pos)**2)/0.01-((y-y_pos)**2)/0.01)
+        ICs_list.append(IC)
+    return ICs_list
+
+
+def train_test_split(point_data_list, global_data_list, train_proportion):
+    total_point_samples = len(point_data_list)
+
+    # TODO: implement a check to make sure that the test-train split specified will keep all
+    # point samples with the same labels together - this depends on the number of point samples
+
+    n_point_train = int(train_proportion*total_point_samples)
+    n_point_test = int(total_point_samples - n_point_train)
+
+    point_train, point_test = point_data_list[:n_point_train], point_data_list[:n_point_test]
+
+    # find the highest label in the point train set; this must become the last label in the global train
+    # set too
+    point_train_labels = []
+    for p in point_train:
+        label_p = p[-1]
+        point_train_labels.append(label_p)
+    max_point_train_label = max(point_train_labels)
+    # this must become the last label in the global train set too
+
+    n_global_train = max_point_train_label
+    n_global_test = len(global_data_list) - n_global_train
+
+    global_train, global_test = global_data_list[:n_global_train], global_data_list[:n_global_test]
+
+    # check that the labels for point and global data in each set match
+    global_train_labels = []
+    for g in global_train:
+        label_g = g[-1]
+        global_train_labels.append(label_g)
+    for l in point_train_labels:
+        if l not in global_train_labels:
+            raise Exception("The point data label has no corresponding global data label")
+
+    return point_train, point_test, global_train, global_test

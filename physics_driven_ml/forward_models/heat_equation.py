@@ -33,15 +33,27 @@ class HeatEquation(object):
 
 class GustoHeatEquationModel(object):
 
-    def __init__(self, mesh, dt, create_training_data=False):
+    def __init__(self, mesh, dt, create_training_data=False, dirname=None, chkptfreq=None):
         domain = Domain(mesh, dt, "CG", 1)
         V = FunctionSpace(mesh, "CG", 1)
         self.V = V
         domain.spaces.add_space("CG", V)
-        output = OutputParameters(dirname="gusto_heat_equation",
+        if create_training_data:
+            checkpoint=True
+            multichkpt=True
+        else:
+            # checkpoint = False
+            # chkfreq=0
+            # multichkpt=False
+            checkpoint=True
+            multichkpt=True
+        output = OutputParameters(dirname=dirname,
                                   dump_vtus=False,
                                   dump_nc=False,
-                                  dump_diagnostics=False)
+                                  dump_diagnostics=False,
+                                  checkpoint=checkpoint,
+                                  chkptfreq=chkptfreq,
+                                  multichkpt=multichkpt)
         io = IO(domain, output)
         params = DiffusionParameters(domain.mesh, kappa=1)
         self.eqn = DiffusionEquation(domain, V, "q", params)

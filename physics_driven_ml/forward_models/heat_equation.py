@@ -68,7 +68,8 @@ class GustoHeatEquationModel(object):
             x, y = SpatialCoordinate(mesh)
             self.source_interpolate = interpolate(self.q*sin(self.t)*sin(pi*x)*sin(pi*y), source)
             label=PhysicsLabel("forcing_term")
-            self.eqn.residual -= source_label(label(prognostic(self.eqn.test * source * dx, "q"),
+            self.eqn.residual -= source_label(label(subject(prognostic(self.eqn.test * source * dx,
+                                                                       "q"), self.q),
                                                self.evaluate))
 
         scheme = BackwardEuler(domain)

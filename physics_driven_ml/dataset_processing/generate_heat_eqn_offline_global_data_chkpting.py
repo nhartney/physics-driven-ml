@@ -48,7 +48,7 @@ for IC in initial_conditions:
     sln = Function(V)
     dirname=f'gusto_heat_eqn_IC{IC_counter}'
     # Set PDE forward model
-    pde_model = GustoHeatEquationModel(mesh, dt, create_training_data=False,
+    pde_model = GustoHeatEquationModel(mesh, dt, create_training_data=True,
                                        dirname=dirname,
                                        chkptfreq=chkptfreq)
     # Advance the PDE forward model in time

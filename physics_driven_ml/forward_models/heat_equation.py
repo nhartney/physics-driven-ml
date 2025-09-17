@@ -40,21 +40,20 @@ class GustoHeatEquationModel(object):
         domain.spaces.add_space("CG", V)
         if create_training_data:
             checkpoint=True
-            multichkpt=True
+            multichkpt=True,
+            diagnostic_fields=[Gradient("q")]
         else:
-            # checkpoint = False
-            # chkfreq=0
-            # multichkpt=False
-            checkpoint=True
-            multichkpt=True
+            checkpoint = False
+            multichkpt=False
+            diagnostic_fields=None
         output = OutputParameters(dirname=dirname,
-                                  dump_vtus=False,
+                                  dump_vtus=True,
                                   dump_nc=False,
                                   dump_diagnostics=False,
                                   checkpoint=checkpoint,
                                   chkptfreq=chkptfreq,
                                   multichkpt=multichkpt)
-        io = IO(domain, output)
+        io = IO(domain, output, diagnostic_fields=diagnostic_fields)
         params = DiffusionParameters(domain.mesh, kappa=1)
         self.eqn = DiffusionEquation(domain, V, "q", params)
 
@@ -66,7 +65,7 @@ class GustoHeatEquationModel(object):
             R = FunctionSpace(mesh, "R", 0)
             self.t = Function(R)
             x, y = SpatialCoordinate(mesh)
-            self.source_interpolate = interpolate(self.q*sin(self.t)*sin(pi*x)*sin(pi*y), source)
+            self.source_interpolate = interpolate(self.q*sin(self.t + dt)*sin(pi*x)*sin(pi*y), source)
             label=PhysicsLabel("forcing_term")
             self.eqn.residual -= source_label(label(subject(prognostic(self.eqn.test * source * dx,
                                                                        "q"), self.q),

@@ -306,31 +306,25 @@ def generate_initial_conditions(mesh, n):
 
 
 def train_test_split(point_data_list, global_data_list, train_proportion):
+    total_global_samples = len(global_data_list)
     total_point_samples = len(point_data_list)
+    pp_sample = int(total_point_samples/total_global_samples)
 
-    # TODO: implement a check to make sure that the test-train split specified will keep all
-    # point samples with the same labels together - this depends on the number of point samples
+    n_global_train = int(train_proportion*total_global_samples)
+    n_global_test = int(total_global_samples - n_global_train)
 
-    n_point_train = int(train_proportion*total_point_samples)
+    n_point_train = int(n_global_train*pp_sample)
     n_point_test = int(total_point_samples - n_point_train)
 
     point_train, point_test = point_data_list[:n_point_train], point_data_list[:n_point_test]
 
-    # find the highest label in the point train set; this must become the last label in the global train
-    # set too
+    global_train, global_test = global_data_list[:n_global_train], global_data_list[:n_global_test]
+
+    # check that the labels for point and global data in each set match
     point_train_labels = []
     for p in point_train:
         label_p = p[-1]
         point_train_labels.append(label_p)
-    max_point_train_label = max(point_train_labels)
-    # this must become the last label in the global train set too
-
-    n_global_train = max_point_train_label
-    n_global_test = len(global_data_list) - n_global_train
-
-    global_train, global_test = global_data_list[:n_global_train], global_data_list[:n_global_test]
-
-    # check that the labels for point and global data in each set match
     global_train_labels = []
     for g in global_train:
         label_g = g[-1]

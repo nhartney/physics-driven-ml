@@ -54,9 +54,9 @@ mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
 dt = 0.001
 
 # Data generation
-num_ICs = 10
-num_timesteps = 10
-num_chkpts = 10
+num_ICs = 20
+num_timesteps = 5
+num_chkpts = num_timesteps
 chkptfreq = num_timesteps/num_chkpts
 
 # Set up function space
@@ -78,7 +78,7 @@ for IC in initial_conditions:
                                        dirname=dirname,
                                        chkptfreq=chkptfreq)
     # Advance the PDE forward model in time
-    pde_model.advance(sln, u_0, ndt=10)
+    pde_model.advance(sln, u_0, ndt=num_timesteps)
     dir_list.append(dirname)
     IC_counter += 1
 
@@ -130,5 +130,39 @@ for chkpt_file in chkpt_list:
 
 point_train, point_test, global_train, global_test = train_test_split(point_data_list, global_data_list, 0.8)
 
+# Save all global data to a checkpoint file
+dataset_dir = os.path.join(
+            "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
+            "heat_problem_global_gusto_data")
+
+point_train_dir = os.path.join(dataset_dir, 'numpy_point_train_data')
+point_test_dir = os.path.join(dataset_dir, 'numpy_point_test_data')
+global_train_dir = os.path.join(dataset_dir, "train_global_data.h5")
+global_test_dir = os.path.join(dataset_dir, "test_global_data.h5")
+
+with CheckpointFile(global_train_dir, "w") as afile:
+        afile.h5pyfile["n"] = len(global_train)
+        afile.save_mesh(mesh)
+        for i, (f, u, label) in enumerate(global_train):
+            afile.save_function(f, idx=i, name="target_f")  # for offline training
+            afile.save_function(u, idx=i, name='target_u')  # for online training
+            afile.set_attr("/", "label", label)
+
+with CheckpointFile(global_test_dir, "w") as afile:
+        afile.h5pyfile["n"] = len(global_test)
+        afile.save_mesh(mesh)
+        for i, (f, u, label) in enumerate(global_test):
+            afile.save_function(f, idx=i, name="target_f")  # for offline training
+            afile.save_function(u, idx=i, name='target_u')  # for online training
+            afile.set_attr("/", "label", label)
+
+# Save point data (f,u,x,y,t,label) to numpy arrays
+np.save(point_train_dir, point_train)
+np.save(point_test_dir, point_test)
+
+print(f'Point training data ({len(point_train)} samples) saved in {point_train_dir}.npy')
+print(f'Point testing data ({len(point_test)} samples) saved in {point_test_dir}.npy')
+print(f'Global training data ({len(global_train)} samples) saved in {global_train_dir}')
+print(f'Global testing data ({len(global_test)} samples) saved in {global_test_dir}')
 
 

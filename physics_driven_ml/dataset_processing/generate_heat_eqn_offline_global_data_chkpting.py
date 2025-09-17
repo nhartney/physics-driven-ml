@@ -7,34 +7,60 @@ import os.path as osp
 import re
 import numpy as np
 from firedrake import (RectangleMesh, FunctionSpace, Function, CheckpointFile,
-                       Constant, DirichletBC, SpatialCoordinate, sin, pi)
+                       Constant, DirichletBC, SpatialCoordinate, sin, pi,
+                       VertexOnlyMesh, assemble)
 
+from firedrake.__future__ import interpolate
 from firedrake.output import VTKFile
 
 from physics_driven_ml.forward_models import GustoHeatEquationModel
 from physics_driven_ml.dataset_processing import generate_initial_conditions, train_test_split
 
+
+def normalise(F):
+    # A function to normalise data to values between zero and one
+    max = F.dat.data.max()
+    min = F.dat.data.min()
+    F.dat.data[:] = (F.dat.data[:] - min)/(max - min)
+    return F
+
+def listed_coordinates(mesh):
+    x_list = []
+    y_list = []
+    coords = mesh.coordinates.dat.data
+    for x, y in coords:
+        x_list.append(x)
+        y_list.append(y)
+    return np.asarray(x_list), np.asarray(y_list)
+
+
+def evaluate_at_points(F, mesh):
+    # Function to evalute a Firedrake function at every point in the mesh
+    coords = mesh.coordinates.dat.data
+    coordinate_list = []
+    for x, y in coords:
+        coordinate_list.append((x,y))
+    vom = VertexOnlyMesh(mesh, coordinate_list)
+    P0DG = FunctionSpace(vom, "DG", 0)
+    F_at_points = assemble(interpolate(F, P0DG))
+    F_values = F_at_points.dat.data_ro
+    return F_values
+
 # Set up problem
 # Domain
 Lx = Ly = 1
-nx = ny = 5
+nx = ny = 10
 mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
 dt = 0.001
 
 # Data generation
-num_ICs = 2
+num_ICs = 10
 num_timesteps = 10
-num_chkpts = 2
+num_chkpts = 10
 chkptfreq = num_timesteps/num_chkpts
 
 # Set up function space
 V = FunctionSpace(mesh, "CG", 1)
-
-# Produce numpy array of point data and a checkpoint file with Firedrake function for the
-# corresponding global f.
-point_data_list = []
-global_data_list = []
-label = 0
 
 # Initial conditions and boundary conditions
 initial_conditions = generate_initial_conditions(mesh, num_ICs)
@@ -59,44 +85,50 @@ for IC in initial_conditions:
 # Next load the data from the checkpoints and save it
 results_path = osp.join("/Users/Jemma/Nell/code/physics-driven-ml/physics_driven_ml/results")
 
+# Produce numpy array of point data and a checkpoint file with Firedrake function for the
+# corresponding global f.
+point_data_list = []
+global_data_list = []
+label = 0
+
 chkpt_list = []
 for dir in dir_list:
-    chkpt_path = osp.join(results_path, dir, "chkpts")
-    for i in range(1, num_chkpts+1):
-       chkpt_n = int(i*chkptfreq)
-       chkpt_file_name = osp.join(chkpt_path, f'chkpt{chkpt_n}.h5')
-       chkpt_list.append(chkpt_file_name)
+    chkpt_file_name = osp.join(results_path, dir, "chkpt.h5")
+    chkpt_list.append(chkpt_file_name)
 
 for chkpt_file in chkpt_list:
-    print("this is the path to another chkpt:", chkpt_file)
-    # Should they all be a different meshes? This is where one single file with the function at different
-    # times would be better...
+    # Is each IC on a different mesh?
     with CheckpointFile(chkpt_file, 'r') as chkfile:
         mesh = chkfile.load_mesh(name='mesh')
         fs = FunctionSpace(mesh, "CG", 1)
-        u = chkfile.load_function(mesh, 'q')
-        t = chkfile.get_attr("/", 'time')
-        x, y = SpatialCoordinate(mesh)
-        f = Function(fs, name="target_f").interpolate(u*sin(t)*sin(pi*x)*sin(pi*y))
+        for i in range(num_chkpts):
+            idx = chkptfreq*(i+1)
+            u = chkfile.load_function(mesh, 'q', idx=idx)
+            t = chkfile.get_timestepping_history(mesh, 'q').get('time')[i+1]
+            # grad_u = chkfile.load_function(mesh, 'q_gradient', idx=idx)
+            # 'q_gradient' is the name of the field in the vtu but this isn't getting written to the chkpt
+            x, y = SpatialCoordinate(mesh)
+            f = Function(fs, name="target_f").interpolate(u*sin(t+dt)*sin(pi*x)*sin(pi*y))
 
-        # output functions to look at f and u
-        # name each output function by intial condition and checkpoint time
-        split_point = '/chkpts/'
-        IC_s, _, chkpt_s = chkpt_file.partition(split_point)
-        IC_no = str(re.findall(r'\d+', IC_s)[0])
-        chkpt_no = str(re.findall(r'\d+', chkpt_s)[0])
+            # scale f, u and grad_u
+            normalised_f = normalise(f)
+            normalised_u = normalise(u)
+            # grad_u = normalise(grad_u)
 
-        outfile = VTKFile(f'results/plots/IC_{IC_no}_chkpt_{chkpt_no}.pvd')
-        outfile.write(u, f)
+            # get values at points
+            f_values = evaluate_at_points(normalised_f, mesh)
+            u_values = evaluate_at_points(normalised_u, mesh)
+            # grad_u_values = evaluate_at_points(grad_u)
+            x_values, y_values = listed_coordinates(mesh)
 
-        # scale f and u
-        u_max = u.dat.data.max()
-        u_min = u.dat.data.min()
-        u.dat.data[:] = (u.dat.data[:] - u_min)/(u_max - u_min)
-        f_max = f.dat.data.max()
-        f_min = f.dat.data.min()
-        f.dat.data[:] = (f.dat.data[:] - f_min)/(f_max - f_min)
+            # append these to point data list
+            label += 1
+            for f, u, x, y in zip(f_values, u_values, x_values, y_values):
+                point_data_list.append((f, u, x, y, t, label))
+            # append the global list with the normalised functions
+            global_data_list.append((normalised_f, normalised_u, label))
 
-        # output functions to look at scaled f and u
-        outfile = VTKFile(f'results/plots/scaled_values_IC_{IC_no}_chkpt_{chkpt_no}.pvd')
-        outfile.write(u, f)
+point_train, point_test, global_train, global_test = train_test_split(point_data_list, global_data_list, 0.8)
+
+
+

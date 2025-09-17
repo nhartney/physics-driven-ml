@@ -334,3 +334,14 @@ def train_test_split(point_data_list, global_data_list, train_proportion):
             raise Exception("The point data label has no corresponding global data label")
 
     return point_train, point_test, global_train, global_test
+
+
+def convert_to_points(u):
+    # A function to convert the output from the dynamics step to point data for the network (for online training)
+    point_data_list = []
+    mesh = u.function_space().mesh()
+    for i, j in mesh.coordinates.dat.data:
+        point_u = u.at(i, j)
+        point_data_list.append((point_u, i, j))
+    point_dataset = PointDataset(numpy_data=point_data_list)
+    return point_dataset

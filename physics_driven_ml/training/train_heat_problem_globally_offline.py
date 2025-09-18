@@ -32,7 +32,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
     Train the model on a given dataset.
     """
     # learning_rate = 5e-10
-    learning_rate = 0.0001
+    learning_rate = 0.000001
     epochs = num_epochs
     device = device
 
@@ -70,11 +70,19 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
 
             # Do a forward pass on all points in the data subset
             network_out, ordered_coords = forward_pass_by_point(subset, model, batch_size)
+            # print("this is network_out:", network_out)
             
             # Interpolate this to a Firedrake function
             global_network_f = interpolate_to_firedrake_function(mesh, fs,
                                                                  network_out,
                                                                  ordered_coords)
+
+            # This is for debugging - ouptput functions to look at them
+            target_func = batch.f_target_fd[0]
+            outfile_name = f'training_plots/data_sample{step_num+1}.pvd'
+            outfile = VTKFile(outfile_name)
+            outfile.write(target_func, global_network_f)
+
 
             # Now make the Firedrake function a PyTorch tensor
             global_network_prediction = to_torch(global_network_f, requires_grad=True)
@@ -101,7 +109,7 @@ if __name__ == "__main__":
     data_file_name = "heat_problem_global_gusto_data"
     batch_size = 1
     device = "cpu"
-    num_epochs = 50
+    num_epochs = 5
 
     # Set the model
     model = PointNN()

@@ -11,18 +11,23 @@ class PointNN(Module):
     def __init__(self):
         super().__init__()
 
-        self.nn_encoder = Sequential(Linear(4, 32),
+        self.nn_encoder = Sequential(Linear(4, 5),
                                      ReLU(True),
-                                     Linear(32, 64),
+                                    #  Sigmoid(),
+                                     Linear(5, 5),
                                      ReLU(True),
-                                     Linear(64, 128),
+                                    #  Sigmoid(),
+                                     Linear(5, 5),
                                      ReLU(True))
+                                    #   Sigmoid())
 
-        self.nn_decoder = Sequential(Linear(128, 64),
+        self.nn_decoder = Sequential(Linear(5, 5),
                                      ReLU(True),
-                                     Linear(64, 32),
+                                    #  Sigmoid(),
+                                     Linear(5, 5),
                                      ReLU(True),
-                                     Linear(32, 1),
+                                    #  Sigmoid(),
+                                     Linear(5, 1),
                                     #  ReLU())
                                     #  Tanh())
                                      Sigmoid())

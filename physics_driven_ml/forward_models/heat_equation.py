@@ -42,20 +42,26 @@ class GustoHeatEquationModel(object):
             checkpoint=True
             multichkpt=True,
             diagnostic_fields=[Gradient("q")]
+            # dumplist=['q_gradient']
         else:
             checkpoint = False
             multichkpt=False
             diagnostic_fields=None
+            # dumplist = []
         output = OutputParameters(dirname=dirname,
                                   dump_vtus=True,
                                   dump_nc=False,
                                   dump_diagnostics=False,
                                   checkpoint=checkpoint,
+                                #   dumplist=dumplist,
                                   chkptfreq=chkptfreq,
                                   multichkpt=multichkpt)
         io = IO(domain, output, diagnostic_fields=diagnostic_fields)
         params = DiffusionParameters(domain.mesh, kappa=1)
         self.eqn = DiffusionEquation(domain, V, "q", params)
+
+        # check the degrees of freedom
+        print("this is the number of dofs for this problem:", self.eqn.X.function_space().dim())
 
         if create_training_data:
             # if we're creating the training data we need to add the forcing

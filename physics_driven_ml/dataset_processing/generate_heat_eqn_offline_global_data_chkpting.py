@@ -54,8 +54,9 @@ mesh = RectangleMesh(nx, ny, Lx, Ly, name="mesh")
 dt = 0.001
 
 # Data generation
-num_ICs = 20
-num_timesteps = 5
+num_ICs = 10
+num_gaussians = 6
+num_timesteps = 20
 num_chkpts = num_timesteps
 chkptfreq = num_timesteps/num_chkpts
 
@@ -63,7 +64,7 @@ chkptfreq = num_timesteps/num_chkpts
 V = FunctionSpace(mesh, "CG", 1)
 
 # Initial conditions and boundary conditions
-initial_conditions = generate_initial_conditions(mesh, num_ICs)
+initial_conditions = generate_initial_conditions(mesh, num_ICs, num_gaussians)
 #TODO: How can we include the boundary conditions? This doesn't get passed to the PDE model...
 bcs = [DirichletBC(V, Constant(0.0), "on_boundary")]
 
@@ -101,8 +102,11 @@ for chkpt_file in chkpt_list:
     with CheckpointFile(chkpt_file, 'r') as chkfile:
         mesh = chkfile.load_mesh(name='mesh')
         fs = FunctionSpace(mesh, "CG", 1)
-        for i in range(num_chkpts):
+        # for i in range(num_chkpts):
+        for i in range(5, 20):
+            print("this is i:", i)
             idx = chkptfreq*(i+1)
+            print("this is idx:", idx)
             u = chkfile.load_function(mesh, 'q', idx=idx)
             t = chkfile.get_timestepping_history(mesh, 'q').get('time')[i+1]
             # grad_u = chkfile.load_function(mesh, 'q_gradient', idx=idx)

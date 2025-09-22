@@ -1,5 +1,5 @@
 import warnings
-warnings.filterwarnings("ignore", category=FutureWarning)
+# warnings.filterwarnings("ignore", category=FutureWarning)
 
 import os
 import argparse
@@ -118,7 +118,7 @@ def train(model, device, train_point_dl, train_global_dl, test_point_dl, test_gl
     return model
 
 
-def forward_pass_by_point(point_train_data_subset, model):
+def forward_pass_by_point(point_train_data_subset, model, batch_size):
     """
     This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
     up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
@@ -138,6 +138,12 @@ def forward_pass_by_point(point_train_data_subset, model):
         network_point_f_value = network_point_f.item()
         # add value to list
         network_out.append(network_point_f_value)
+
+        # for debugging
+        target_f = batch[:,0]
+        # print("input1, input2, input3, input4:", inputs)
+        print("prediction, target:", network_point_f.item(), target_f.item())
+    # print("we've now forward passed every point in one sample and this is the list of values for f prediction:", network_out)
     return np.asarray(network_out)
 
 
@@ -237,6 +243,10 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
 
         # forward pass
         network_point_f = model(inputs)[:,0]
+        if network_point_f.requires_grad:
+            pass
+        else:
+            print("requires_grad has now become False for the network output...")
 
         if output_loss_fn:
             # for plotting purposes
@@ -244,7 +254,8 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
             f_list.append(network_point_f_value)
 
         # for debugging
-        print("prediction, target:", network_point_f.item(), target_f.item())
+        # print("input1, input2, input3, input4:", inputs)
+        # print("prediction, target:", network_point_f.item(), target_f.item())
         
         # compute L2 loss at the point
         loss = l2_loss(network_point_f, target_f)
@@ -252,6 +263,7 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
         loss_list.append(loss)
     # sum together all point losses in the list
     global_loss = sum(loss_list)
+    # print("this is where requires_grad is true or not for the summed loss which will be backpropagated:", global_loss.requires_grad)
 
     if output_loss_fn:
         # print("in calculate global loss, this is the network's point f predictions for this global sample:", f_list)
@@ -259,6 +271,67 @@ def calculate_global_loss(point_train_data_subset, train_global_dl, model, outpu
         return global_loss, f_func
     else:
         return global_loss
+
+
+def forward_pass(point_train_data_subset, train_global_dl, model, output_loss_fn=False,
+                 output_global_loss=True):
+    """
+    This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
+    up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
+    returns a list of network predictions at each point, which can then be interpolated to a Firedrake
+    function for a global network estimate of f.
+    """
+
+    batch_size = 1
+    l2_loss = torch.nn.MSELoss()
+    loss_list = []
+    f_list = []
+    point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
+    train_steps = len(point_train_dl)
+    for step_num, batch in enumerate(point_train_dl):
+        # model.zero_grad()
+        # extract inputs and target from the tensor
+        inputs = batch[:, 1:5]
+        target_f = batch[:,0]
+
+        # forward pass
+        network_point_f = model(inputs)[:,0]
+
+        if network_point_f.requires_grad:
+            pass
+        else:
+            print("requires_grad has now become False for the network output...")
+
+        if output_loss_fn:
+            # for plotting purposes
+            network_point_f_value = network_point_f.item()
+            f_list.append(network_point_f_value)
+
+        # for debugging
+        # print("input1, input2, input3, input4:", inputs)
+        # print("prediction, target:", network_point_f.item(), target_f.item())
+        
+        if output_global_loss:
+            # compute L2 loss at the point
+            loss = l2_loss(network_point_f, target_f)
+            # add point loss to total loss list
+            loss_list.append(loss)
+            # sum together all point losses in the list
+            global_loss = sum(loss_list)
+        
+        else:
+            network_point_f_value = network_point_f.item()
+            f_list.append(network_point_f_value)
+
+    if output_global_loss:
+        if output_loss_fn:
+            # print("in calculate global loss, this is the network's point f predictions for this global sample:", f_list)
+            f_func = interpolate_to_firedrake_function(train_global_dl, point_train_dl, f_list)
+            return global_loss, f_func
+        else:
+            return global_loss
+    else:
+        return np.asarray(f_list)
 
 
 if __name__ == "__main__":

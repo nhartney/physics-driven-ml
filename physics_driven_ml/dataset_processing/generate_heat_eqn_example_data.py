@@ -4,6 +4,7 @@ conditions. The equation is solved in time with the forward Euler method.
 """
 import os
 from firedrake import *
+from firedrake.__future__ import interpolate
 from gusto import *
 import numpy as np
 from numpy import random
@@ -16,12 +17,12 @@ import matplotlib.pyplot as plt
 
 def advance_one_timestep(u_in, mesh, V, bcs, time):
     k = Constant(1.)
-    dt = Constant(0.1)
+    dt = Constant(0.001)
     u = Function(V)
     u_ = Function(V)
     v = TestFunction(V)
     x,y = SpatialCoordinate(mesh)
-    f = Function(V).interpolate(u*time*sin(pi*x)*sin(pi*y))
+    f = Function(V).interpolate(u*sin(time+dt)*sin(pi*x)*sin(pi*y))
     F = (inner((u - u_)/dt, v) + inner(k * grad(u), grad(v)) - inner(f, v)) * dx
     u_.assign(u_in)
     # Solve PDE (using LU factorisation)
@@ -45,7 +46,7 @@ def solve_with_IC(mesh, ntimesteps, dt, IC):
         t = n*dt
         u = advance_one_timestep(u_in, mesh=mesh, V=V, bcs=bcs, time=t)
          # Compute f from the u solution (this is the network's target)
-        f = Function(V).interpolate(u*sin(pi*t)*sin(pi*x)*sin(pi*y))
+        f = Function(V).interpolate(u*sin(t+dt)*sin(pi*x)*sin(pi*y))
         stepped_sln.append([f, u, t])
         u_in = u
 

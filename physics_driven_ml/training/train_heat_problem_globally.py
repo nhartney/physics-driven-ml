@@ -175,34 +175,25 @@ def sub_sample_point_data(point_train_dataloader):
     return subsets
 
 
-def create_VOM(train_global_dl, subset_dl):
-    mesh = train_global_dl.dataset.mesh
-    coordinates = []
-    for data_sample in subset_dl:
-        x_locs = data_sample[:,2].item()
-        y_locs = data_sample[:,3].item()
-        coordinates.append((x_locs,y_locs))
-    vom = VertexOnlyMesh(mesh, coordinates, redundant=False)
-    return vom
+def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, network_f, coordinates_list):
 
+    mesh = global_dl_mesh
+    # create vertex-only mesh with the same input ordering as the coordinates
+    vom = VertexOnlyMesh(mesh, coordinates_list, redundant=False)
 
-def interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f):
-    vom = create_VOM(train_global_dl, subset_dl)
-
-    # start with a VOM that is structured like the data
+    # start with a function space that is structured like the data
     P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
     field_vomio = Function(P0DG_io)
     field_vomio.dat.data_wo[:] = network_f
 
-    # Next interpolate onto the vertex only mesh that does not have
+    # Next interpolate onto the function space that does not have
     # the input ordering
     P0DG = FunctionSpace(vom, "DG", 0)
     field_vom = assemble(interpolate(field_vomio, P0DG))
 
     # interpolate from this VOM to the parent mesh (global data mesh)
-    src_mesh = train_global_dl.dataset.mesh
     # find the function space that the global target function is on
-    Vsrc = train_global_dl.dataset.fs
+    Vsrc = global_dl_fs
 
     I = Interpolator(TestFunction(Vsrc), P0DG)
     f_star = field_vom.riesz_representation(riesz_map="l2")

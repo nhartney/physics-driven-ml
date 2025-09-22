@@ -61,10 +61,10 @@ point_data_list = []
 global_data_list = []
 label = 0
 
-initial_conditions = generate_initial_conditions(mesh, 10)
+initial_conditions = generate_initial_conditions(mesh, 1)
 
 for IC in initial_conditions:
-    sln = solve_with_IC(mesh=mesh, ntimesteps=10, dt=dt, IC=IC)
+    sln = solve_with_IC(mesh=mesh, ntimesteps=5, dt=dt, IC=IC)
     # extract f and u at (x,y) points from (f,u,t) solutions
     for s in sln:
         f = s[0]
@@ -72,10 +72,8 @@ for IC in initial_conditions:
         t = s[2]
         # scale f function
         print("min, max of f before scaling:", f.dat.data.min(), f.dat.data.max())
-        f.dat.data[:] = -10/(np.log(f.dat.data[:] + 1e-10) - 1e-10)
+        f.dat.data[:] = (f.dat.data[:] - f.dat.data.min())/(f.dat.data.max() - f.dat.data.min())
         print("min, max of f after scaling:", f.dat.data.min(), f.dat.data.max())
-        # f.dat.data[:] = np.exp((-10/f.dat.data[:]) + 1e-10) - 1e-10
-        # print("min, max of f after undoing scaling:", f.dat.data.min(), f.dat.data.max())
         label +=1
         for i, j in mesh.coordinates.dat.data:
             u_eval = u.at(i,j)
@@ -88,9 +86,12 @@ for IC in initial_conditions:
 point_train, point_test, global_train, global_test = train_test_split(point_data_list, global_data_list, 0.8)
 
 # Save global f function to checkpoint files
+# dataset_dir = os.path.join(
+#             "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
+#             "heat_problem_example_global_data")
 dataset_dir = os.path.join(
             "/Users/Jemma/Nell/code/physics-driven-ml/data/datasets",
-            "heat_problem_example_global_data")
+            "small_data")
 
 point_train_dir = os.path.join(dataset_dir, 'numpy_point_train_data')
 point_test_dir = os.path.join(dataset_dir, 'numpy_point_test_data')

@@ -5,6 +5,7 @@ boundary condition choices.
 from firedrake import (Constant, Function, TestFunction, FunctionSpace,
                        SpatialCoordinate, RectangleMesh, sin, pi, exp,
                        inner, grad, dx, VTKFile, DirichletBC, solve, project)
+from firedrake.__future__ import interpolate
 from numpy import random
 
 # Test parameters

@@ -5,8 +5,9 @@ method.
 """
 import os
 from firedrake import (PeriodicRectangleMesh, SpatialCoordinate, Function,
-                       CheckpointFile, interpolate, RectangleMesh,
+                       CheckpointFile, RectangleMesh,
                        IcosahedralSphereMesh)
+from firedrake.__future__ import interpolate
 from gusto import *
 import numpy as np
 from numpy.random import default_rng

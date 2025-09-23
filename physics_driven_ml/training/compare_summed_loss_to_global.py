@@ -1,5 +1,11 @@
 import os
 
+# TODO: get rid of this!!
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+import numpy as np
+
 import torch
 import torch.optim as optim
 
@@ -26,32 +32,31 @@ def train(model, device, train_point_dl, train_global_dl, train_global_dataset):
     """
     epochs = 1
     device = device
-    learning_rate = 1e-5
+    learning_rate = 1e-2
 
     optimiser = optim.AdamW(model.parameters(), lr=learning_rate, eps=1e-8)
 
     max_grad_norm = 1.0
 
-    # Training loop
-    for epoch_num in trange(epochs):
-        logger.info(f"Epoch num: {epoch_num}")
 
-        model.train()
+    model.train()
 
-        # total_summing_loss = 0
-        train_steps = len(train_global_dl)
+    # total_summing_loss = 0
+    train_steps = len(train_global_dl)
 
-        point_train_data_subsets = sub_sample_point_data(train_point_dl)
+    point_train_data_subsets = sub_sample_point_data(train_point_dl)
 
-        if len(point_train_data_subsets) != train_steps:
-            print("The number of data subsets does not match the number of global samples")
+    if len(point_train_data_subsets) != train_steps:
+        print("The number of data subsets does not match the number of global samples")
 
-        subset = point_train_data_subsets[0]
-        global_sample_list = []
-        for sample in train_global_dl:
-            global_sample_list.append(sample)
+    # subset = point_train_data_subsets[0]
+    # global_sample_list = []
+    # for sample in train_global_dl:
+    #     global_sample_list.append(sample)
 
-        global_sample = global_sample_list[0]
+    # global_sample = global_sample_list[0]
+
+    for step_num, (subset, global_sample) in enumerate(list(zip(point_train_data_subsets, train_global_dl))):
 
         model.zero_grad()
 
@@ -59,45 +64,63 @@ def train(model, device, train_point_dl, train_global_dl, train_global_dataset):
 
         # Compare estimates of the loss in both ways
         # 1. Do a forward pass on all points in the data subset and accumulate loss
-        print("this is the forward pass where we will accumulate loss")
-        summing_loss = forward_pass(subset, train_global_dl, model, output_global_loss=True)
+        # print("this is the forward pass where we will accumulate loss")
+        summing_loss = forward_pass(subset, train_global_dl, model, output_summed_loss=True)
+        # print("does summing loss require grad?", summing_loss.requires_grad)
         total_summing_loss = summing_loss.item()
 
       
         # 2. Do a forward pass on all points and return point estimates, then turn this into Firedrake function
-        #  and compute the loss as the errror norm between two functions
-        print("this is the forward pass where the loss comes from comparing functions")
-        network_f = forward_pass(subset, train_global_dl, model, output_global_loss=False)
-        fd_f = interpolate_to_firedrake_function(train_global_dl, subset_dl, network_f)
+        #  and compute the loss as the error norm between two functions
+        # print("this is the forward pass where the loss comes from comparing functions")
+        network_f, ordered_coords, f_function = forward_pass(subset, train_global_dl, model, output_summed_loss=False, output_loss_fn=True)
+        mesh = train_global_dl.dataset.mesh
+        fs = train_global_dl.dataset.fs
+        fd_f = interpolate_to_firedrake_function(mesh, fs, network_f, ordered_coords)
         batch = BatchedElement2(*[x.to(device, non_blocking=True) if isinstance(x, torch.Tensor) else x for x in global_sample])
         global_target_f = batch.target
-        global_network_prediction = to_torch(fd_f, requires_grad=True)
+        # print(f"this is global_target_f (requires_grad? {global_target_f.requires_grad}):", global_target_f)
+        # global_network_prediction = to_torch(fd_f, requires_grad=True)
+        global_network_prediction = to_torch(fd_f)
+        global_network_prediction.requires_grad_()
+        # print(f"this is global_network_prediction (requires_grad? {global_network_prediction.requires_grad}):", global_network_prediction)
         func_loss = H(global_network_prediction, global_target_f)
+        # print("does func_loss have requires_grad?", func_loss.requires_grad)
         total_func_loss = func_loss.item()
 
-        print("this is the summing loss:", total_summing_loss, "does it requires_grad?", summing_loss.requires_grad)
-        print("this is the function loss:", total_func_loss, "does it requires_grad?", func_loss.requires_grad)
+        print("summing loss:", total_summing_loss, "function loss:", total_func_loss)
 
-        # print("this is the model:", print(model))
-        print("these are the weights and biases of the layers in the network, before any backwards pass:")
-        for name, param in model.state_dict().items():
-            print(name)
-            print(param)
 
-        # Do one backwards pass on the summing loss
-        summing_loss.backward()
+        # Do a backwards pass on the summing loss
+        func_loss.backward()
         torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_grad_norm)
         optimiser.step()
-        print("these are the weights and biases after one backwards pass on the summing loss:")
+
+        # Do a backwards pass on the function loss
+        # func_loss.backward()
+        # torch.nn.utils.clip_grad_norm_(parameters=model.parameters(), max_norm=max_grad_norm)
+        # optimiser.step()
+
+         # print("this is the model:", print(model))
+        print("these are the weights and biases of the layers in the network:")
         for name, param in model.state_dict().items():
             print(name)
             print(param)
+            # print("this is requires_grad of the parameter:", param.requires_grad)
+            # print("this is the gradient of the parameter:", param.grad)
+            # print("is the parameter a leaf tensor (should be)?", param.is_leaf)
+            # print("this is .grad_fn on the parameter:", param.grad_fn)
+
+        # print("this is model.state_dict_hooks:", model._state_dict_hooks)
+        # print("gradients of the weights:", model[0].weight.grad)
+
+        # optimiser.step()
 
     return model
 
 
-def forward_pass(point_train_data_subset, train_global_dl, model, output_loss_fn=False,
-                 output_global_loss=True):
+def forward_pass(point_train_data_subset, train_global_dl, model, output_summed_loss=True,
+                 output_loss_fn=False):
     """
     This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
     up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. If 
@@ -110,6 +133,7 @@ def forward_pass(point_train_data_subset, train_global_dl, model, output_loss_fn
     l2_loss = torch.nn.MSELoss()
     loss_list = []
     f_list = []
+    ordered_coords = []
     point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
 
     for step_num, batch in enumerate(point_train_dl):
@@ -117,6 +141,9 @@ def forward_pass(point_train_data_subset, train_global_dl, model, output_loss_fn
         # extract inputs and target from the tensor
         inputs = batch[:, 1:5]
         target_f = batch[:,0]
+        x = batch[:, 3].item()
+        y = batch[:, 4].item()
+        ordered_coords.append((x,y))
 
         # forward pass
         network_point_f = model(inputs)[:,0]
@@ -125,27 +152,32 @@ def forward_pass(point_train_data_subset, train_global_dl, model, output_loss_fn
         # print("input1, input2, input3, input4:", inputs)
         # print("prediction, target:", network_point_f.item(), target_f.item())
         
-        if output_global_loss:
+        if output_summed_loss:
             # compute L2 loss at the point
             loss = l2_loss(network_point_f, target_f)
             # add point loss to total loss list
             loss_list.append(loss)
-            # sum together all point losses in the list
-            global_loss = sum(loss_list)
         
         else:
             network_point_f_value = network_point_f.item()
             f_list.append(network_point_f_value)
 
-    if output_global_loss:
-        if output_loss_fn:
-            # print("in calculate global loss, this is the network's point f predictions for this global sample:", f_list)
-            f_func = interpolate_to_firedrake_function(train_global_dl, point_train_dl, f_list)
-            return global_loss, f_func
-        else:
-            return global_loss
+    if output_summed_loss:
+        # Loss function based on sum of individual losses
+        summed_loss = sum(loss_list)
+        return summed_loss
+    
     else:
-        return np.asarray(f_list)
+        # Return the point estimates, ready to be interpolated to a Firedrake function 
+        if output_loss_fn:
+            # print(f"this is the network's point f predictions for this global sample (lenth:{len(f_list)}):", f_list)
+            mesh = train_global_dl.dataset.mesh
+            fs = train_global_dl.dataset.fs
+            f_func = interpolate_to_firedrake_function(mesh, fs, f_list, ordered_coords)
+            # print(f"this is that data turned into a function: (lenth: {len(f_func.dat.data)})", f_func.dat.data)
+            return np.asarray(f_list), ordered_coords, f_func
+        else:
+            return np.asarray(f_list), ordered_coords
 
 
 if __name__ == "__main__":
@@ -193,7 +225,8 @@ if __name__ == "__main__":
 
     def assemble_L2_error(x, x_exact):
         # Assemble L2 loss
-        return assemble(0.5 * (x - x_exact) ** 2 * dx)
+        # return assemble(0.5 * (x - x_exact) ** 2 * dx)
+        return errornorm(x_exact, x, norm_type='L2')
 
     # -- Construct the Firedrake torch operators -- #
     mesh = global_train_dataset.mesh

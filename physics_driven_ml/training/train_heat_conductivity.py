@@ -49,14 +49,29 @@ def train(model, config: ModelConfig,
             k_exact = batch.target
             u_obs = batch.u_obs
 
+            print("this is the target:", k_exact.requires_grad)
+            print("this is the observation:", u_obs.requires_grad)
+
             # Forward pass
             k = model(u_obs)
 
             # Solve PDE for κ_P and assemble the L2-loss: 0.5 * ||u(κ) - u_obs||^{2}_{L2}
+            print("this are the types going into the G method:")
+            print("k:", type(k))
+            print("u_obs:", type(u_obs))
+            print("do any of the things going into G have requires_grad=True?")
+            print("k:", k.requires_grad)
+            print("u_obs:", u_obs.requires_grad)
             loss_uk = G(k, u_obs)
             total_loss_uk += loss_uk.item()
 
             # Assemble L2-loss: 0.5 * ||κ - κ_exact||^{2}_{L2}
+            print("this are the types going into the H method:")
+            print("k:", type(k))
+            print("k_exact:", type(k_exact))
+            print("do any of the things going into H have requires_grad=True?")
+            print("k:", k.requires_grad)
+            print("k_exact:", k_exact.requires_grad)
             loss_k = H(k, k_exact)
             total_loss_k += loss_k.item()
 
@@ -148,12 +163,15 @@ if __name__ == "__main__":
         # Solve PDE (using LU factorisation)
         solve(F == 0, u, bcs=bcs, solver_parameters={'ksp_type': 'preonly', 'pc_type': 'lu'})
         # Assemble Firedrake L2-loss (and not l2-loss as in PyTorch)
+        print("this is the type of u and u_obs, that get put into assemble_L2_error:")
+        print("u:", type(u))
+        print("u_obs:", type(u_obs))
         return assemble_L2_error(u, u_obs)
 
     def assemble_L2_error(x, x_exact):
         """Assemble L2-loss"""
         # for debugging:
-        print("this is the type returned by Nacime's asssemble_L2_error:", type(assemble(0.5 * (x - x_exact) ** 2 * dx)))
+        print("HERE: this is the type returned by Nacime's asssemble_L2_error:", type(assemble(0.5 * (x - x_exact) ** 2 * dx)))
         return assemble(0.5 * (x - x_exact) ** 2 * dx)
 
     solve_pde = functools.partial(solve_pde, f=f, V=V, bcs=bcs)
@@ -173,6 +191,8 @@ if __name__ == "__main__":
     # Set tape locally to only record the operations relevant to H on the computational graph
     with set_working_tape() as tape:
         # Define PyTorch operator for computing the L2-loss (for computing κ -> 0.5 * ||κ - κ_exact||^{2}_{L2})
+        print("this is the type of k and k_exact that get put into assemble_L2_error:")
+        print("k:", type(k), "k_exact:", type(k_exact))
         F = ReducedFunctional(assemble_L2_error(k, k_exact), [Control(k), Control(k_exact)])
         print("this is the type of Nacime's F:", type(F))
         H = torch_operator(F)

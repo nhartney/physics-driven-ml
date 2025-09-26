@@ -1,5 +1,7 @@
 import os
 
+from os.path import abspath, dirname
+
 # TODO: get rid of this!!
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -16,7 +18,7 @@ from torch.utils.data import DataLoader
 
 from firedrake import *
 from firedrake_adjoint import *
-from firedrake.ml.pytorch import fem_operator, to_torch
+from firedrake.ml.pytorch import fem_operator, to_torch, torch_operator
 
 from physics_driven_ml.dataset_processing import PointDataset, PDEDataset2, BatchedElement2
 from physics_driven_ml.models import PointNN, SimplePointNN
@@ -83,8 +85,24 @@ def train(model, device, train_point_dl, train_global_dl, train_global_dataset):
         # global_network_prediction = to_torch(fd_f, requires_grad=True)
         global_network_prediction = to_torch(fd_f)
         global_network_prediction.requires_grad_()
+        print("size of prediction and target:")
+        print(global_network_prediction.shape)
+        print(global_target_f.shape)
         # print(f"this is global_network_prediction (requires_grad? {global_network_prediction.requires_grad}):", global_network_prediction)
+        print("this is the type of the things that go into H (in Nacime's code these would be <class 'torch.Tensor'>):",
+              type(global_network_prediction), type(global_target_f))
+        print("this is whether or not the inputs to H require grad: (in Nacime's code the network output requires grad but the target doesn't)",
+              "prediction requires grad:", global_network_prediction.requires_grad,
+              "target requires grad?", global_target_f.requires_grad)
         func_loss = H(global_network_prediction, global_target_f)
+
+        # Maybe we should be calling H on Firedrake functions and not on PyTorch tensors
+        # Let's get the Firedrake function of the target rather than the PyTorch tensor of it
+        # fd_target = batch.target_fd
+        # print("this is the type of the things that go into H (in Nacime's code these would be <class 'torch.Tensor'>):",
+        #       type(fd_target), type(fd_f))
+        # func_loss = H(fd_target, fd_f)
+        
         # print("does func_loss have requires_grad?", func_loss.requires_grad)
         total_func_loss = func_loss.item()
 
@@ -159,7 +177,12 @@ def forward_pass(point_train_data_subset, train_global_dl, model, output_summed_
             loss_list.append(loss)
         
         else:
+            # print("this is network_point_f:", network_point_f)
             network_point_f_value = network_point_f.item()
+            # print("this is network_point_f.item():", network_point_f_value)
+            # print("this is network_point_f[0]:", network_point_f[0])
+            # f_list.append(network_point_f_value)
+            # try adding tensor to list rather than the value (this would keep it attached to the graph)
             f_list.append(network_point_f_value)
 
     if output_summed_loss:
@@ -183,8 +206,10 @@ def forward_pass(point_train_data_subset, train_global_dl, model, output_summed_
 if __name__ == "__main__":
     logger = get_logger("Training")
 
-    data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/datasets")
+    # data_dir = os.path.join("/Users/Jemma/Nell/code/physics-driven-ml/data/datasets")
+    data_dir = f'{abspath(dirname(__file__))}/../../data/datasets'
     data_file_name = "heat_problem_example_global_data"
+    # data_file_name = "small_data"
     batch_size = 1
     device = "cpu"
 
@@ -225,8 +250,10 @@ if __name__ == "__main__":
 
     def assemble_L2_error(x, x_exact):
         # Assemble L2 loss
-        # return assemble(0.5 * (x - x_exact) ** 2 * dx)
-        return errornorm(x_exact, x, norm_type='L2')
+        print("this is the type returned by assemble_L2_error (should be <class 'pyadjoint.adjfloat.AdjFloat'>):", 
+              type(assemble(0.5 * (x - x_exact) ** 2 * dx)))
+        return assemble(0.5 * (x - x_exact) ** 2 * dx)
+        # return errornorm(x_exact, x, norm_type='L2')
 
     # -- Construct the Firedrake torch operators -- #
     mesh = global_train_dataset.mesh
@@ -237,8 +264,11 @@ if __name__ == "__main__":
     # Set tape locally to only record the operations relevant to H on the computational graph
     with set_working_tape() as tape:
         # Define PyTorch operator for computing the L2-loss
+        print("these are the types of f_pred, f_exact that go into assemble_L2_error (in Nacime's these would be Firedrake functiions:)",
+              type(f_pred), type(f_exact))
         F = ReducedFunctional(assemble_L2_error(f_pred, f_exact), [Control(f_pred), Control(f_exact)])
-        H = fem_operator(F)
+        # H = fem_operator(F)
+        H = torch_operator(F)
 
     # -- Training -- #
 

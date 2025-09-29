@@ -20,8 +20,9 @@ from physics_driven_ml.forward_models import HeatEquation, GustoHeatEquationMode
 from physics_driven_ml.utils import get_logger
 
 from physics_driven_ml.dataset_processing.heat_problem_data_tools import (sub_sample_point_data,
-                                                                          interpolate_to_firedrake_function,
-                                                                          forward_pass_by_point)
+                                                                          forward_pass)
+
+from physics_driven_ml.evaluation import evaluate_globally
 
 
 def train(model, pde_model, device, train_point_dl, train_global_dl,
@@ -31,8 +32,7 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
     """
     Train the model on a given dataset.
     """
-    # learning_rate = 5e-10
-    learning_rate = 0.000001
+    learning_rate = 5e-10
     epochs = num_epochs
     device = device
 
@@ -69,26 +69,10 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
             global_target_f = batch.f_target
 
             # Do a forward pass on all points in the data subset
-            network_out, ordered_coords = forward_pass_by_point(subset, model, batch_size)
-            # print("this is network_out:", network_out)
-            
-            # Interpolate this to a Firedrake function
-            global_network_f = interpolate_to_firedrake_function(mesh, fs,
-                                                                 network_out,
-                                                                 ordered_coords)
-
-            # This is for debugging - ouptput functions to look at them
-            target_func = batch.f_target_fd[0]
-            outfile_name = f'training_plots/data_sample{step_num+1}.pvd'
-            outfile = VTKFile(outfile_name)
-            outfile.write(target_func, global_network_f)
-
-
-            # Now make the Firedrake function a PyTorch tensor
-            global_network_prediction = to_torch(global_network_f, requires_grad=True)
-          
+            global_network_pred = forward_pass(subset, model, batch_size)
+  
             # Define L2-loss using Firedrake
-            loss = H(global_network_prediction, global_target_f)
+            loss = H(global_network_pred, global_target_f)
             total_loss += loss.item()
            
             # Backprop and perform Adam optimisation
@@ -100,6 +84,27 @@ def train(model, pde_model, device, train_point_dl, train_global_dl,
 
         logger.info(f"Total loss: {total_loss/train_steps}")
 
+        # Evaluate this version of the model on the test set
+        error = evaluate_globally(model, device, test_point_dl, test_global_dl, write_out_results=False)
+        logger.info(f"L2 error from this model, evaluated on the test set: {error}")
+
+        # Save best-performing model
+        if error < best_error or epoch_num == 0:
+            best_error = error
+            # Create directory for trained models
+            name_dir = f"heat_problem_globally_epoch-{epoch_num}-error_{best_error:.5f}"
+            model_dir = "/Users/Jemma/Nell/code/physics-driven-ml/data/saved_models"
+            model_dir = os.path.join(model_dir, "heat_problem_globally", name_dir)
+            if not os.path.exists(model_dir):
+                os.makedirs(model_dir)
+            # Save model
+            logger.info(f"Saving model checkpoint to {model_dir}\n")
+            # Take care of distributed/parallel training
+            model_to_save = (model.module if hasattr(model, "module") else model)
+            torch.save(model_to_save.state_dict(), os.path.join(model_dir, "model.pt"))
+
+    return model
+
 
 if __name__ == "__main__":
     logger = get_logger("Training")
@@ -109,7 +114,7 @@ if __name__ == "__main__":
     data_file_name = "heat_problem_global_gusto_data"
     batch_size = 1
     device = "cpu"
-    num_epochs = 5
+    num_epochs = 20
 
     # Set the model
     model = PointNN()

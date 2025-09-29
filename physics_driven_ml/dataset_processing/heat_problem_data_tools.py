@@ -226,70 +226,32 @@ def sub_sample_point_data(point_train_dataloader):
     return subsets
 
 
-def forward_pass_by_point(point_train_data_subset, model, batch_size):
+def forward_pass(point_train_data_subset, model, batch_size):
     """
     This takes in a dataset (a subset of the full point dataset where all the labels are the same), sets
     up a dataloader for that dataset and does a forward pass on all the samples in that dataloader. It
-    returns a list of network predictions at each point, which can then be interpolated to a Firedrake
-    function for a global network estimate of f.
+    builds a list of network predictions at each point (tensors), which are then concatenated into one
+    tensor to give a global network estimate of f, which is what is returned by the method.
     """
-    network_out = []
-    ordered_coords = []
-    point_train_dl = DataLoader(point_train_data_subset,
-                                batch_size=batch_size, shuffle=False)
+
+    tensor_list = []
+    point_train_dl = DataLoader(point_train_data_subset, batch_size=batch_size, shuffle=False)
+
     for step_num, batch in enumerate(point_train_dl):
-        # model.zero_grad()
-        # extract inputs from the tensor
+
+        # extract inputs and target from the tensor
         inputs = batch[:, 1:5]
+
         # forward pass
-        network_point_f = model(inputs)[:, 0]
-        # extract value from the output tensor
-        network_point_f_value = network_point_f.item()
+        network_point_f = model(inputs)[:,0]
 
-        # this is just for debugging
-        # print("this is the point value predicted by the network:", network_point_f_value)
-        # target_point_f = batch[:, 0]
-        # print("this is the target point f value:", target_point_f.item())
+        # add to list of tensor solutions
+        tensor_list.append(network_point_f)
 
-        # add value to list
-        network_out.append(network_point_f_value)
-        # add coordinate to coordinate list (same ordering as data list)
-        x = batch[:, 3].item()
-        y = batch[:, 4].item()
-        ordered_coords.append((x, y))
-    return np.asarray(network_out), ordered_coords
+    # concatenate the tensor list together
+    f_tensor = torch.cat(tuple(tensor_list))
 
-
-def interpolate_to_firedrake_function(global_dl_mesh, global_dl_fs, network_f, coordinates_list):
-
-    mesh = global_dl_mesh
-    # create vertex-only mesh with the same input ordering as the coordinates
-    vom = VertexOnlyMesh(mesh, coordinates_list, redundant=False)
-
-    # start with a function space that is structured like the data
-    P0DG_io = FunctionSpace(vom.input_ordering, "DG", 0)
-    field_vomio = Function(P0DG_io)
-    field_vomio.dat.data_wo[:] = network_f
-
-    # Next interpolate onto the function space that does not have
-    # the input ordering
-    P0DG = FunctionSpace(vom, "DG", 0)
-    field_vom = assemble(interpolate(field_vomio, P0DG))
-
-    # interpolate from this VOM to the parent mesh (global data mesh)
-    # find the function space that the global target function is on
-    Vsrc = global_dl_fs
-
-    I = Interpolator(TestFunction(Vsrc), P0DG)
-    f_star = field_vom.riesz_representation(riesz_map="l2")
-    f_data_star = Cofunction(Vsrc.dual())
-    I.interpolate(f_star, adjoint=True, output=f_data_star)
-
-    # Do this with the new interpolate behaviour
-    # f_data_star = assemble(interpolate(f_star, P0DG, adjoint=True))
-
-    field = f_data_star.riesz_representation(riesz_map="l2")
-    return field
+    return f_tensor
 
 
 def generate_initial_conditions(mesh, n):

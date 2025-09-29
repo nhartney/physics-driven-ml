@@ -6,7 +6,6 @@ from tqdm.auto import tqdm, trange
 from numpy.random import default_rng
 
 from firedrake import *
-from firedrake.__future__ import interpolate
 
 from physics_driven_ml.utils import get_logger
 
